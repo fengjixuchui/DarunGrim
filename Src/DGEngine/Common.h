@@ -16,6 +16,7 @@
 #include <unordered_map>
 
 #include "windows.h"
+#include <vector>
 
 using namespace std;
 using namespace stdext;
@@ -38,7 +39,7 @@ typedef struct _FileInfo_
 	TCHAR ProductName[100];
 	TCHAR ModifiedTime[100];
 	TCHAR MD5Sum[100];
-} FileInfo, * PFileInfo;
+} FileInfo,  *PFileInfo;
 
 typedef struct _BasicBlock_ {
 	va_t StartAddress; //ea_t
@@ -52,7 +53,7 @@ typedef struct _BasicBlock_ {
 	int FingerprintLen;
 	int CmdArrayLen;
 	char Data[0];
-} BasicBlock, * PBasicBlock;
+} BasicBlock,  *PBasicBlock;
 
 #define DREF 0
 #define CREF 1
@@ -86,22 +87,22 @@ typedef struct _MapInfo_ {
 	va_t SrcBlock;
 	va_t SrcBlockEnd;
 	va_t Dst;
-} MapInfo, * PMapInfo;
+} MapInfo,  *PMapInfo;
 
 typedef struct _FingerPrintInfo_ {
 	va_t addr;
-} FingerPrintInfo, * PFingerPrintInfo;
+} FingerPrintInfo,  *PFingerPrintInfo;
 
 typedef struct _FunctionMatchInfo_
 {
-	va_t TheSourceAddress;
+	va_t SourceAddress;
 	va_t EndAddress;
-	va_t TheTargetAddress;
+	va_t TargetAddress;
 	short BlockType;
 	short MatchRate;
-	char* TheSourceFunctionName;
+	char *SourceFunctionName;
 	short Type;
-	char* TheTargetFunctionName;
+	char *TargetFunctionName;
 	int MatchCountForTheSource;
 	int NoneMatchCountForTheSource;
 	int MatchCountWithModificationForTheSource;
@@ -109,6 +110,53 @@ typedef struct _FunctionMatchInfo_
 	int NoneMatchCountForTheTarget;
 	int MatchCountWithModificationForTheTarget;
 } FunctionMatchInfo;
+
+class FunctionMatchInfoList
+{
+private:
+    vector <FunctionMatchInfo> m_functionMatchInfoList;
+
+public:
+	template<typename T>
+	struct Iterator {
+		T* p;
+		T& operator*() { return *p; }
+		bool operator != (const Iterator& rhs) {
+			return p != rhs.p;
+		}
+		void operator ++() { ++p; }
+	};
+	
+	auto begin() const
+    {
+		return m_functionMatchInfoList.begin();
+	}
+
+	auto end() const
+    {
+		return m_functionMatchInfoList.end();
+	}
+
+    void Add(FunctionMatchInfo functionMatchInfo)
+    {
+        m_functionMatchInfoList.push_back(functionMatchInfo);
+    }
+
+	int Size()
+	{
+		return m_functionMatchInfoList.size();
+	}
+
+    void ClearFunctionMatchList()
+    {
+        for (auto& val : m_functionMatchInfoList)
+        {
+            free(val.SourceFunctionName);
+            free(val.TargetFunctionName);
+        }
+        m_functionMatchInfoList.clear();
+    }    
+};
 
 typedef struct _CodeBlock_
 {
@@ -131,7 +179,7 @@ public:
 		min_buckets = 4000
 	};
 public:
-	size_t operator() (/*[in]*/ const unsigned char* Bytes) const
+	size_t operator() (/*[in]*/ const unsigned char *Bytes) const
 	{
 		size_t Key = 0;
 		for (int i = 0; i < *(unsigned short*)Bytes; i++)
@@ -141,7 +189,7 @@ public:
 		return  Key;
 	}
 public:
-	bool operator() (/*[in]*/const unsigned char* Bytes01,/*[in]*/ const unsigned char* Bytes02) const
+	bool operator() (/*[in]*/const unsigned char *Bytes01,/*[in]*/ const unsigned char *Bytes02) const
 	{
 		if (Bytes01 == Bytes02)
 		{
@@ -152,7 +200,7 @@ public:
 		{
 			return (memcmp(Bytes01 + sizeof(unsigned short), Bytes02 + sizeof(unsigned short), *(unsigned short*)Bytes01) < 0);
 		}
-		return (*(unsigned short*)Bytes01 > * (unsigned short*)Bytes02);
+		return (*(unsigned short*)Bytes01 >  *(unsigned short*)Bytes02);
 	}
 };
 
@@ -166,7 +214,7 @@ typedef struct _AnalysisInfo_ {
 	multimap <string, va_t> name_map;
 	multimap <va_t, string> address_name_map;
 	multimap <va_t, PMapInfo> map_info_map;
-} AnalysisInfo, * PAnalysisInfo;
+} AnalysisInfo,  *PAnalysisInfo;
 
 typedef struct _MatchData_ {
 	short Type;
@@ -178,14 +226,99 @@ typedef struct _MatchData_ {
 	va_t PatchedParentAddress;
 } MatchData;
 
+class MatchMapList
+{
+private:
+    vector<MatchData*> m_matchDataList;
+
+public:
+	template<typename T>
+	struct Iterator {
+		T* p;
+		T& operator*() { return *p; }
+		bool operator != (const Iterator& rhs) {
+			return p != rhs.p;
+		}
+		void operator ++() { ++p; }
+	};
+	
+	auto begin() const { // const version
+		return m_matchDataList.begin();
+	}
+	auto end() const { // const version
+		return m_matchDataList.end();
+	}
+
+	int Size()
+	{
+		return m_matchDataList.size();
+	}
+
+    void Add(MatchData *new_match_data)
+    {
+        m_matchDataList.push_back(new_match_data);
+    }
+  
+    void FreeMatchMapList()
+    {
+        for (vector<MatchData*>::iterator it = m_matchDataList.begin(); it != m_matchDataList.end(); it++)
+        {
+            if (*it)
+            {
+                delete (*it);
+            }
+        }
+    }
+
+    va_t GetAddress(int index)
+    {
+        for (vector<MatchData*>::iterator it = m_matchDataList.begin(); it != m_matchDataList.end(); it++)
+        {            
+            return (*it)->Addresses[index];
+        }
+    }
+
+    int GetMaxMatchRate()
+    {
+        int maxMatchRate = 0;
+        if (m_matchDataList.size() > 0)
+        {
+            for (vector<MatchData*>::iterator it = m_matchDataList.begin(); it != m_matchDataList.end(); it++)
+            {
+                if ((*it)->MatchRate > maxMatchRate)
+                {
+                    maxMatchRate = (*it)->MatchRate;
+                }
+            }
+        }
+        
+        return maxMatchRate;
+    }
+
+    void Print()
+    {
+        if (m_matchDataList.size() > 0)
+        {
+            for (vector<MatchData*>::iterator it = m_matchDataList.begin(); it != m_matchDataList.end(); it++)
+            {
+                //TODO: Logger.Log(10, LOG_DIFF_MACHINE, "Basic Block: %X Match Rate: %d%%\n", (*blockIterator).Start, (*it)->MatchRate);
+            }
+        }
+        else
+        {
+            //TODO: Logger.Log(10, LOG_DIFF_MACHINE, "Basic Block: %X Has No Match.\n", (*blockIterator).Start);
+        }
+    }
+};
+
 enum { NAME_MATCH, FINGERPRINT_MATCH, TWO_LEVEL_FINGERPRINT_MATCH, TREE_MATCH, FINGERPRINT_INSIDE_FUNCTION_MATCH, FUNCTION_MATCH };
 
 typedef struct _AnalysisInfoList_ {
 	PAnalysisInfo p_analysis_info;
 	SOCKET socket;
 	va_t address;
-	struct _AnalysisInfoList_* prev;
-	struct _AnalysisInfoList_* next;
+	struct _AnalysisInfoList_ *prev;
+	struct _AnalysisInfoList_ *next;
 } AnalysisInfoList;
 
 typedef pair <va_t, PBasicBlock> AddrPBasicBlock_Pair;
@@ -201,5 +334,16 @@ typedef pair <unsigned char*, unsigned char*> Fingerprint_Pair;
 
 #define STATUS_TREE_CHECKED 0x00000001
 #define STATUS_MAPPING_DISABLED 0x2
+
+class BREAKPOINTS
+{
+public:
+	unordered_set<va_t> SourceFunctionMap;
+	unordered_set<va_t> SourceAddressMap;
+
+	unordered_set<va_t> TargetFunctionMap;
+	unordered_set<va_t> TargetAddressMap;
+};
+
 
 #pragma pack(pop)

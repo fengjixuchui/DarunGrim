@@ -7,159 +7,79 @@
 #include "IDASession.h"
 #include "LogOperation.h"
 #include "MatchResults.h"
-
-#define DEBUG_FUNCTION_LEVEL_MATCH_OPTIMIZING 1
-
-class BREAKPOINTS
-{
-public:
-    unordered_set<va_t> SourceFunctionMap;
-    unordered_set<va_t> SourceAddressMap;
-
-    unordered_set<va_t> TargetFunctionMap;
-    unordered_set<va_t> TargetAddressMap;
-};
-
-typedef struct
-{
-    va_t Source;
-    va_t Target;
-    int MatchRate;
-    int IndexDiff;
-} MatchRateInfo;
+#include "DiffAlgorithms.h"
 
 class IDASessions
 {
 private:
     int DebugFlag;
-    SOCKET SocketForTheSource;
-    SOCKET SocketForeTheTarget;
 
-    int GetFingerPrintMatchRate(unsigned char* unpatched_finger_print, unsigned char* patched_finger_print);
+    bool ShowFullMatched;
+    bool ShowNonMatched;
 
-    void RemoveDuplicates();
-    void RevokeTreeMatchMapIterInfo(va_t address, va_t match_address);
-    void GenerateFunctionMatchInfo();
-
-    BOOL DeleteMatchInfo(DisassemblyStorage& disassemblyStorage);
-
-    unordered_set <va_t> TheSourceUnidentifedBlockHash;
-    unordered_set <va_t> TheTargetUnidentifedBlockHash;
-
-    vector <FunctionMatchInfo> FunctionMatchList;
-    vector <FunctionMatchInfo> ReverseFunctionMatchList;
-
-    //Algorithms
-    void DoFingerPrintMatch(MATCHMAP* pTemporaryMap);
-    void DoFingerPrintMatchInsideFunction(va_t SourceFunctionAddress, list <va_t>& SourceBlockAddresses, va_t TargetFunctionAddress, list <va_t>& TargetBlockAddresses);
-    void PurgeFingerprintHashMap(MATCHMAP* pTemporaryMap);
-
-    void DoIsomorphMatch(MATCHMAP* pTemporaryMap);
-    void DoFunctionMatch(MATCHMAP* pTargetTemporaryMap);
-    bool DoFunctionLevelMatchOptimizing();
-
-    MatchRateInfo* GetMatchRateInfoArray(va_t source_address, va_t target_address, int type, int& MatchRateInfoCount);
-    DumpAddressChecker* pDumpAddressChecker;
-
-    void FreeMatchMapList(vector<MatchData*>* pMatchMapList);
-
-public:
-    IDASessions(IDASession* the_source = NULL, IDASession* the_target = NULL);
-    ~IDASessions();
-    void ClearFunctionMatchList();
-
-    void SetDumpAddressChecker(DumpAddressChecker* p_dump_address_checker)
-    {
-        pDumpAddressChecker = p_dump_address_checker;
-    }
-
-    void SetSource(IDASession* NewSource)
-    {
-        SourceController = NewSource;
-    }
-
-    void SetTarget(IDASession* NewTarget)
-    {
-        TargetController = NewTarget;
-    }
-
-    IDASession* GetSourceController();
-    IDASession* GetTargetController();
-    void DumpMatchMapIterInfo(const char* prefix, multimap <va_t, MatchData>::iterator match_map_iter);
-    va_t DumpFunctionMatchInfo(int index, va_t address);
-    void GetMatchStatistics(va_t address, int index, int& found_match_number, int& found_match_with_difference_number, int& not_found_match_number, float& matchrate);
-    int GetMatchRate(va_t unpatched_address, va_t patched_address);
-
-    void RemoveMatchData(va_t source_address, va_t target_address);
-    void CleanUpMatchDataList(vector<MatchData*> match_data_list);
-    vector<MatchData*>* GetMatchData(int index, va_t address, BOOL erase = FALSE);
-    void AppendToMatchMap(MATCHMAP* pBaseMap, MATCHMAP* pTemporaryMap);
-
-
-    void ShowDiffMap(va_t unpatched_address, va_t patched_address);
-    void PrintMatchMapInfo();
-
-    void TestFunctionMatchRate(int index, va_t Address);
-    void RetrieveNonMatchingMembers(int index, va_t FunctionAddress, list <va_t>& Members);
-    bool TestAnalysis();
-    bool Analyze();
-    void AnalyzeFunctionSanity();
-    va_t GetMatchAddr(int index, va_t address);
-
-    int GetFunctionMatchInfoCount();
-    FunctionMatchInfo GetFunctionMatchInfo(int i);
-
-    int GetUnidentifiedBlockCount(int index);
-    CodeBlock GetUnidentifiedBlock(int index, int i);
-    BOOL IsInUnidentifiedBlockHash(int index, va_t address);
-
-    BOOL Save(DisassemblyStorage& disassemblyStorage, unordered_set <va_t>* pTheSourceSelectedAddresses = NULL, unordered_set <va_t>* pTheTargetSelectedAddresses = NULL);
-
-private:
-    BOOL bRetrieveDataForAnalysis;
-
-public:
-    void SetRetrieveDataForAnalysis(BOOL newRetrieveDataForAnalysis)
-    {
-        bRetrieveDataForAnalysis = newRetrieveDataForAnalysis;
-    }
-
-    const char* GetMatchTypeStr(int Type);
-
-private:
     bool LoadDiffResults;
     bool LoadIDAController;
-public:
-    void SetLoadDiffResults(bool NewLoadDiffResults)
-    {
-        LoadDiffResults = NewLoadDiffResults;
-    }
 
-    void SetLoadIDAController(bool NewLoadIDAController)
-    {
-        LoadIDAController = NewLoadIDAController;
-    }
-
-private:
-    string SourceDBName;
     int SourceID;
+    string SourceDBName;
     va_t SourceFunctionAddress;
 
-    string TargetDBName;
     int TargetID;
+    string TargetDBName;
     va_t TargetFunctionAddress;
 
     DisassemblyStorage* m_diffDisassemblyStorage;
     DisassemblyStorage* m_sourceDisassemblyStorage;
     DisassemblyStorage* m_targetDisassemblyStorage;
 
-    IDASession* SourceController;
-    IDASession* TargetController;
-    MatchResults* pMatchResults;
+    IDASession* SourceIDASession;
+    IDASession* TargetIDASession;
 
-    BOOL _Load();
+    SOCKET SocketForTheSource;
+    SOCKET SocketForeTheTarget;
+	DiffAlgorithms *pDiffAlgorithms;
+	BOOL bRetrieveDataForAnalysis;
+    MatchResults *pMatchResults;
+    DumpAddressChecker *pDumpAddressChecker;
+    FunctionMatchInfoList *m_pFunctionMatchInfoList;
+
+    unordered_set <va_t> SourceUnidentifedBlockHash;
+    unordered_set <va_t> TargetUnidentifedBlockHash;
+
+	BOOL _Load();
 
 public:
+    IDASessions(IDASession *the_source = NULL, IDASession *the_target = NULL);
+    ~IDASessions();
+
+    void SetDumpAddressChecker(DumpAddressChecker *p_dump_address_checker)
+    {
+        pDumpAddressChecker = p_dump_address_checker;
+    }
+
+    void SetSource(IDASession *NewSource)
+    {
+        SourceIDASession = NewSource;
+    }
+
+    void SetTarget(IDASession *NewTarget)
+    {
+        TargetIDASession = NewTarget;
+    }
+
+    void SetRetrieveDataForAnalysis(BOOL newRetrieveDataForAnalysis)
+    {
+        bRetrieveDataForAnalysis = newRetrieveDataForAnalysis;
+    }
+
+    void SetLoadDiffResults(bool NewLoadDiffResults)
+    {
+        LoadDiffResults = NewLoadDiffResults;
+    }
+    void SetLoadIDAController(bool NewLoadIDAController)
+    {
+        LoadIDAController = NewLoadIDAController;
+    }
 
     void SetSource(const char* db_filename, DWORD id = 1, va_t function_address = 0)
     {
@@ -199,10 +119,32 @@ public:
     BOOL Load(const char* DiffDBFilename);
     BOOL Load(DisassemblyStorage* disassemblyStorage);
 
-    bool ShowFullMatched;
-    bool ShowNonMatched;
+    IDASession *GetSourceIDASession();
+    IDASession *GetTargetIDASession();
 
+    void AppendToMatchMap(MATCHMAP* pBaseMap, MATCHMAP* pTemporaryMap);
+    MatchMapList* GetMatchData(int index, va_t address, BOOL erase = FALSE);
+    va_t GetMatchAddr(int index, va_t address);
+    int GetMatchRate(va_t unpatched_address, va_t patched_address);
+    void RemoveMatchData(va_t source_address, va_t target_address);
+    void PrintMatchMapInfo();
 
+    va_t DumpFunctionMatchInfo(int index, va_t address);
+
+    void GetMatchStatistics(va_t address, int index, int& found_match_number, int& found_match_with_difference_number, int& not_found_match_number, float& matchrate);
+    void CleanUpMatchDataList(vector<MatchData*> match_data_list);
+
+    void ShowDiffMap(va_t unpatched_address, va_t patched_address);
+    void TestFunctionMatchRate(int index, va_t Address);
+    void RetrieveNonMatchingMembers(int index, va_t FunctionAddress, list <va_t>& Members);
+    bool TestAnalysis();
+    MATCHMAP* DoFunctionLevelMatchOptimizing(FunctionMatchInfoList* pFunctionMatchInfoList);
+    bool Analyze();
+    void AnalyzeFunctionSanity();
+
+    int GetUnidentifiedBlockCount(int index);
+    CodeBlock GetUnidentifiedBlock(int index, int i);
+    BOOL IsInUnidentifiedBlockHash(int index, va_t address);
+    BOOL Save(DisassemblyStorage& disassemblyStorage, unordered_set <va_t> *pTheSourceSelectedAddresses = NULL, unordered_set <va_t> *pTheTargetSelectedAddresses = NULL);
     BREAKPOINTS ShowUnidentifiedAndModifiedBlocks();
 };
-
