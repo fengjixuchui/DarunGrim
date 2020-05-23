@@ -17,7 +17,7 @@ private:
     bool ShowFullMatched;
     bool ShowNonMatched;
 
-    bool LoadDiffResults;
+    bool LoadMatchResults;
     bool LoadIDAController;
 
     int SourceID;
@@ -28,23 +28,22 @@ private:
     string TargetDBName;
     va_t TargetFunctionAddress;
 
-    DisassemblyStorage* m_diffDisassemblyStorage;
-    DisassemblyStorage* m_sourceDisassemblyStorage;
-    DisassemblyStorage* m_targetDisassemblyStorage;
+    Storage* m_diffStorage;
+    Storage* m_sourceStorage;
+    Storage* m_targetStorage;
 
     IDASession* SourceIDASession;
     IDASession* TargetIDASession;
 
-    SOCKET SocketForTheSource;
-    SOCKET SocketForeTheTarget;
-	DiffAlgorithms *pDiffAlgorithms;
-	BOOL bRetrieveDataForAnalysis;
-    MatchResults *pMatchResults;
-    DumpAddressChecker *pDumpAddressChecker;
-    FunctionMatchInfoList *m_pFunctionMatchInfoList;
+    MatchResults* m_pMatchResults;
+    FunctionMatchInfoList* m_pFunctionMatchInfoList;
 
-    unordered_set <va_t> SourceUnidentifedBlockHash;
-    unordered_set <va_t> TargetUnidentifedBlockHash;
+    DiffAlgorithms* m_pdiffAlgorithms;
+
+    unordered_set <va_t> m_sourceUnidentifedBlockHash;
+    unordered_set <va_t> m_targetUnidentifedBlockHash;
+
+    DumpAddressChecker* m_pdumpAddressChecker;
 
 	BOOL _Load();
 
@@ -54,7 +53,7 @@ public:
 
     void SetDumpAddressChecker(DumpAddressChecker *p_dump_address_checker)
     {
-        pDumpAddressChecker = p_dump_address_checker;
+        m_pdumpAddressChecker = p_dump_address_checker;
     }
 
     void SetSource(IDASession *NewSource)
@@ -67,14 +66,9 @@ public:
         TargetIDASession = NewTarget;
     }
 
-    void SetRetrieveDataForAnalysis(BOOL newRetrieveDataForAnalysis)
+    void SetLoadMatchResults(bool NewLoadMatchResults)
     {
-        bRetrieveDataForAnalysis = newRetrieveDataForAnalysis;
-    }
-
-    void SetLoadDiffResults(bool NewLoadDiffResults)
-    {
-        LoadDiffResults = NewLoadDiffResults;
+        LoadMatchResults = NewLoadMatchResults;
     }
     void SetLoadIDAController(bool NewLoadIDAController)
     {
@@ -95,16 +89,16 @@ public:
         TargetFunctionAddress = function_address;
     }
 
-    void SetSource(DisassemblyStorage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
+    void SetSource(Storage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
     {
-        m_sourceDisassemblyStorage = disassemblyStorage;
+        m_sourceStorage = disassemblyStorage;
         SourceID = id;
         SourceFunctionAddress = function_address;
     }
 
-    void SetTarget(DisassemblyStorage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
+    void SetTarget(Storage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
     {
-        m_targetDisassemblyStorage = disassemblyStorage;
+        m_targetStorage = disassemblyStorage;
         TargetID = id;
         TargetFunctionAddress = function_address;
     }
@@ -117,7 +111,7 @@ public:
 
     BOOL Create(const char* DiffDBFilename);
     BOOL Load(const char* DiffDBFilename);
-    BOOL Load(DisassemblyStorage* disassemblyStorage);
+    BOOL Load(Storage* disassemblyStorage);
 
     IDASession *GetSourceIDASession();
     IDASession *GetTargetIDASession();
@@ -132,7 +126,6 @@ public:
     va_t DumpFunctionMatchInfo(int index, va_t address);
 
     void GetMatchStatistics(va_t address, int index, int& found_match_number, int& found_match_with_difference_number, int& not_found_match_number, float& matchrate);
-    void CleanUpMatchDataList(vector<MatchData*> match_data_list);
 
     void ShowDiffMap(va_t unpatched_address, va_t patched_address);
     void TestFunctionMatchRate(int index, va_t Address);
@@ -145,6 +138,6 @@ public:
     int GetUnidentifiedBlockCount(int index);
     CodeBlock GetUnidentifiedBlock(int index, int i);
     BOOL IsInUnidentifiedBlockHash(int index, va_t address);
-    BOOL Save(DisassemblyStorage& disassemblyStorage, unordered_set <va_t> *pTheSourceSelectedAddresses = NULL, unordered_set <va_t> *pTheTargetSelectedAddresses = NULL);
+    BOOL Save(Storage& disassemblyStorage, unordered_set <va_t> *pTheSourceSelectedAddresses = NULL, unordered_set <va_t> *pTheTargetSelectedAddresses = NULL);
     BREAKPOINTS ShowUnidentifiedAndModifiedBlocks();
 };

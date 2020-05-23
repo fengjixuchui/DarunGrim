@@ -1,10 +1,11 @@
 #pragma once
 #include <stdio.h>
-#include "sqlite3.h"
 #include <string>
 
 #include "Common.h"
-#include "DisassemblyStorage.h"
+#include "Storage.h"
+
+#include "sqlite3.h"
 
 using namespace std;
 
@@ -66,8 +67,6 @@ typedef unsigned char *PBYTE;
 #define UPDATE_BASIC_BLOCK_TABLE_BLOCK_TYPE_STATEMENT "UPDATE " BASIC_BLOCK_TABLE" SET BlockType='%d' WHERE FileID='%u' AND StartAddress='%u';"
 #define UPDATE_BASIC_BLOCK_TABLE_DISASM_LINES_STATEMENT "UPDATE " BASIC_BLOCK_TABLE" SET DisasmLines=%Q WHERE StartAddress='%u';"
 #define UPDATE_BASIC_BLOCK_TABLE_FINGERPRINT_STATEMENT "UPDATE " BASIC_BLOCK_TABLE" SET Fingerprint=%Q WHERE StartAddress='%u';"
-
-
 
 #define MATCH_MAP_TABLE "MatchMap"
 #define CREATE_MATCH_MAP_TABLE_STATEMENT "CREATE TABLE " MATCH_MAP_TABLE" ( \n\
@@ -136,21 +135,21 @@ typedef unsigned char *PBYTE;
 #define DELETE_FUNCTION_MATCH_INFO_TABLE_STATEMENT "DELETE FROM "FUNCTION_MATCH_INFO_TABLE" WHERE TheSourceFileID=%u and TheTargetFileID=%u"
 #define CREATE_FUNCTION_MATCH_INFO_TABLE_INDEX_STATEMENT "CREATE INDEX "FUNCTION_MATCH_INFO_TABLE"Index ON "FUNCTION_MATCH_INFO_TABLE" ( TheSourceFileID, TheTargetFileID, SourceAddress, TargetAddress )"
 
-class SQLiteDisassemblyStorage : public DisassemblyStorage
+class SQLiteStorage : public Storage
 {
 private:
-    sqlite3 *db;
-    string m_DatabaseName;
+    sqlite3 *m_database;
+    string m_databaseName;
 
 public:
-    SQLiteDisassemblyStorage(const char *DatabaseName = NULL);
-    ~SQLiteDisassemblyStorage();
+    SQLiteStorage(const char *DatabaseName = NULL);
+    ~SQLiteStorage();
 
 public:
     void SetFileInfo(FileInfo *p_file_info);
     int BeginTransaction();
     int EndTransaction();
-    void EndAnalysis();
+    void Close();
     void AddBasicBlock(PBasicBlock pBasicBlock, int fileID = 0);
     void AddMapInfo(PMapInfo p_map_info, int fileID = 0);
 
@@ -160,7 +159,7 @@ public:
     bool Open(char *DatabaseName);
     const char *GetDatabaseName();
     void CloseDatabase();
-    bool CreateDatabase(const char *DatabaseName);
+    bool ConnectDatabase(const char *DatabaseName);
 
     int GetLastInsertRowID();
     int ExecuteStatement(sqlite3_callback callback, void *context, const char *format, ...);
@@ -185,7 +184,7 @@ public:
     MatchMapList*ReadMatchMap(int sourceID, int targetID, int index, va_t address, bool erase);
 
     static int ReadMatchMapCallback(void *arg, int argc, char **argv, char **names);
-    MatchResults *ReadMatchResults(int sourceID, int targetID);
+    MatchResults* ReadMatchResults(int sourceID, int targetID);
 
     static int ReadFunctionMemberAddressesCallback(void *arg, int argc, char **argv, char **names);
     list<BLOCK> ReadFunctionMemberAddresses(int fileID, va_t function_address);

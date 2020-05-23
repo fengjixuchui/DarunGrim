@@ -10,7 +10,7 @@
 #include "Diff.h"
 #include "Log.h"
 #include "IDASessions.h"
-#include "SQLiteDisassemblyStorage.h"
+#include "SQLiteStorage.h"
 
 using namespace std;
 using namespace stdext;
@@ -22,23 +22,22 @@ IDASessions::IDASessions(IDASession *the_source, IDASession *the_target) :
     DebugFlag(0),
     SourceIDASession(NULL),
     TargetIDASession(NULL),
-    bRetrieveDataForAnalysis(FALSE),
     SourceID(0),
     SourceFunctionAddress(0),
     TargetID(0),
     TargetFunctionAddress(0),
     LoadIDAController(false),
-    LoadDiffResults(true),
+    LoadMatchResults(true),
     ShowFullMatched(false),
     ShowNonMatched(false),
-    pDumpAddressChecker(NULL)
+    m_pdumpAddressChecker(NULL)
 {
-    m_diffDisassemblyStorage = NULL;
+    m_diffStorage = NULL;
     
     SetSource(the_source);
     SetTarget(the_target);
-	pMatchResults = NULL;
-	pDiffAlgorithms = new DiffAlgorithms();
+	m_pMatchResults = NULL;
+	m_pdiffAlgorithms = new DiffAlgorithms();
 }
 
 IDASessions::~IDASessions()
@@ -51,10 +50,10 @@ IDASessions::~IDASessions()
     if (TargetIDASession)
         delete TargetIDASession;
 
-	if (pMatchResults)
+	if (m_pMatchResults)
 	{
-		pMatchResults->Clear();
-		delete pMatchResults;
+		m_pMatchResults->Clear();
+		delete m_pMatchResults;
 	}        
 }
 
@@ -70,15 +69,13 @@ IDASession *IDASessions::GetTargetIDASession()
 
 void IDASessions::AnalyzeFunctionSanity()
 {
-    multimap <va_t, MatchData>::iterator last_match_map_iter;
-    multimap <va_t, MatchData>::iterator match_map_iter;
     va_t last_unpatched_addr = 0;
     va_t last_patched_addr = 0;
     va_t unpatched_addr = 0;
     va_t patched_addr = 0;
 
-    Logger.Log(10, LOG_DIFF_MACHINE, "%s: DiffResults->MatchMap Size=%u\n", __FUNCTION__, pMatchResults->MatchMap.size());
-    for (auto& val : pMatchResults->MatchMap)
+    Logger.Log(10, LOG_DIFF_MACHINE, "%s: DiffResults->MatchMap Size=%u\n", __FUNCTION__, m_pMatchResults->MatchMap.size());
+    for (auto& val : m_pMatchResults->MatchMap)
     {
         PBasicBlock p_basic_block = SourceIDASession->GetBasicBlock(val.first);
         if (p_basic_block)
@@ -109,20 +106,11 @@ void IDASessions::AnalyzeFunctionSanity()
         }
     }
 
-    for (auto& val : pMatchResults->ReverseAddressMap)
+    for (auto& val : m_pMatchResults->ReverseAddressMap)
     {
-#ifdef USE_LEGACY_MAP
-        multimap <va_t, PBasicBlock>::iterator address_map_pIter;
-        address_map_pIter = TargetIDASession->GetClientAnalysisInfo()->address_map.find(reverse_match_map_iterator->first);
-
-        if (address_map_pIter != TargetIDASession->GetClientAnalysisInfo()->address_map.end())
-        {
-            PBasicBlock p_basic_block = address_map_pIter->second;
-#else
         PBasicBlock p_basic_block = SourceIDASession->GetBasicBlock(val.first);
         if (p_basic_block)
         {
-#endif
             unpatched_addr = val.first;
             patched_addr = val.second;
 
@@ -298,7 +286,7 @@ MATCHMAP *IDASessions::DoFunctionLevelMatchOptimizing(FunctionMatchInfoList *pFu
             for (va_t targetAddress : targetMembers)
 			{
 				bool debug = false;
-				if (pDumpAddressChecker && pDumpAddressChecker->IsDumpPair(sourceAddress, targetAddress))
+				if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair(sourceAddress, targetAddress))
 					debug = true;
 
 				int currentMatchRate = GetMatchRate(sourceAddress, targetAddress);
@@ -338,8 +326,8 @@ bool IDASessions::Analyze()
     SourceIDASession->LoadBasicBlock();
     TargetIDASession->LoadBasicBlock();
 
-    pMatchResults = new MatchResults();
-    pMatchResults->SetDumpAddressChecker(pDumpAddressChecker);
+    m_pMatchResults = new MatchResults();
+    m_pMatchResults->SetDumpAddressChecker(m_pdumpAddressChecker);
 
     Logger.Log(10, LOG_DIFF_MACHINE, "%s: Fingerprint Map Size %u:%u\n", __FUNCTION__,
         SourceIDASession->GetClientAnalysisInfo()->fingerprint_map.size(),
@@ -377,8 +365,8 @@ bool IDASessions::Analyze()
                         patched_name_map_pIter->second
                     );
 
-                    if (pDumpAddressChecker)
-                        pDumpAddressChecker->DumpMatchInfo(match_data.Addresses[0], match_data.Addresses[1], match_data.MatchRate, "%s Add to temporary match map", __FUNCTION__);
+                    if (m_pdumpAddressChecker)
+                        m_pdumpAddressChecker->DumpMatchInfo(match_data.Addresses[0], match_data.Addresses[1], match_data.MatchRate, "%s Add to temporary match map", __FUNCTION__);
 
                     TemporaryMatchMap.insert(MatchMap_Pair(
                         val.second,
@@ -397,12 +385,12 @@ bool IDASessions::Analyze()
     {
         Logger.Log(10, LOG_DIFF_MACHINE, "%s: DoFingerPrintMatch\n", __FUNCTION__);
 
-        MATCHMAP *pTemporaryMap = pDiffAlgorithms->DoFingerPrintMatch();
+        MATCHMAP *pTemporaryMap = m_pdiffAlgorithms->DoFingerPrintMatch();
         Logger.Log(10, LOG_DIFF_MACHINE, "%s: Match Map Size: %u\n", __FUNCTION__, pTemporaryMap->size());
         Logger.Log(10, LOG_DIFF_MACHINE, "%s: DoIsomorphMatch\n", __FUNCTION__);
 	    while (pTemporaryMap->size() > 0)
 	    {
-            MATCHMAP *pMatchMap = pDiffAlgorithms->DoIsomorphMatch(&pMatchResults->MatchMap, &TemporaryMatchMap, pTemporaryMap);
+            MATCHMAP *pMatchMap = m_pdiffAlgorithms->DoIsomorphMatch(&m_pMatchResults->MatchMap, &TemporaryMatchMap, pTemporaryMap);
 
             if (pMatchMap->size() > 0)
             {
@@ -427,13 +415,13 @@ bool IDASessions::Analyze()
 
         if (TemporaryMatchMap.size() > 0)
         {
-            pMatchResults->Append(&TemporaryMatchMap);
+            m_pMatchResults->Append(&TemporaryMatchMap);
         }
         else
         {
             break;
         }
-        pDiffAlgorithms->PurgeFingerprintHashMap(&TemporaryMatchMap);
+        m_pdiffAlgorithms->PurgeFingerprintHashMap(&TemporaryMatchMap);
         TemporaryMatchMap.clear();
 
         Logger.Log(10, LOG_DIFF_MACHINE, "%s: Call DoFunctionMatch\n", __FUNCTION__);
@@ -441,41 +429,41 @@ bool IDASessions::Analyze()
 		SourceIDASession->LoadBlockToFunction();
 		TargetIDASession->LoadBlockToFunction();
 
-        MATCHMAP *pFunctionMatchMap = pDiffAlgorithms->DoFunctionMatch(&pMatchResults->MatchMap, SourceIDASession->GetFunctionToBlock(), TargetIDASession->GetFunctionToBlock());
+        MATCHMAP *pFunctionMatchMap = m_pdiffAlgorithms->DoFunctionMatch(&m_pMatchResults->MatchMap, SourceIDASession->GetFunctionToBlock(), TargetIDASession->GetFunctionToBlock());
 
         /*TODO: Against pFUnctionMatchMap
 
         // Remove match entries for specific target_function
         for (block_addr_it = block_addresses.begin(); block_addr_it != block_addresses.end(); block_addr_it++)
         {
-            va_t source_address = *block_addr_it;
-            for (multimap <va_t, MatchData>::iterator it = pCurrentMatchMap->find(source_address);
-                it != pCurrentMatchMap->end() && it->first == source_address;
+            va_t sourceAddress = *block_addr_it;
+            for (multimap <va_t, MatchData>::iterator it = pCurrentMatchMap->find(sourceAddress);
+                it != pCurrentMatchMap->end() && it->first == sourceAddress;
                 )
             {
                 va_t source_function_address;
-                va_t target_address = it->second.Addresses[1];
+                va_t targetAddress = it->second.Addresses[1];
                 BOOL function_matched = FALSE;
-                if (SourceIDASession->GetFunctionAddress(source_address, source_function_address))
+                if (SourceIDASession->GetFunctionAddress(sourceAddress, source_function_address))
                 {
-                    function_matched = TargetIDASession->FindBlockFunctionMatch(target_address, chosen_target_function_addr);
+                    function_matched = TargetIDASession->FindBlockFunctionMatch(targetAddress, chosen_target_function_addr);
                 }
 
                 if (!function_matched)
                 {
-                    if (pDumpAddressChecker &&
+                    if (m_pdumpAddressChecker &&
                         (
-                            pDumpAddressChecker->IsDumpPair(source_function_address, target_address) ||
-                            pDumpAddressChecker->IsDumpPair(source_function_address, chosen_target_function_addr)
+                            m_pdumpAddressChecker->IsDumpPair(source_function_address, targetAddress) ||
+                            m_pdumpAddressChecker->IsDumpPair(source_function_address, chosen_target_function_addr)
                             )
                         )
-                        LogMessage(0, __FUNCTION__, "Removing address %X( %X )-%X( %X )\n", source_address, source_function_address, target_address, chosen_target_function_addr);
-                    it = pMatchResults->Erase(it);
+                        LogMessage(0, __FUNCTION__, "Removing address %X( %X )-%X( %X )\n", sourceAddress, source_function_address, targetAddress, chosen_target_function_addr);
+                    it = m_pMatchResults->Erase(it);
 
                 }
                 else
                 {
-                    //Logger.Log( 10, LOG_DIFF_MACHINE,  "Keeping address %X( %X )-%X( %X )\n", Address, AddressToFunctionMapForTheSourceIter->second, target_address, AddressToFunctionMapForTheTargetIter->second );
+                    //Logger.Log( 10, LOG_DIFF_MACHINE,  "Keeping address %X( %X )-%X( %X )\n", Address, AddressToFunctionMapForTheSourceIter->second, targetAddress, AddressToFunctionMapForTheTargetIter->second );
                     it++;
                 }
             }
@@ -485,20 +473,20 @@ bool IDASessions::Analyze()
 		SourceIDASession->ClearBlockToFunction();
 		TargetIDASession->ClearBlockToFunction();
 
-        Logger.Log(10, LOG_DIFF_MACHINE, "%s: One Loop Of Analysis MatchMap size is %u.\n", __FUNCTION__, pMatchResults->MatchMap.size());
+        Logger.Log(10, LOG_DIFF_MACHINE, "%s: One Loop Of Analysis MatchMap size is %u.\n", __FUNCTION__, m_pMatchResults->MatchMap.size());
 
-        if (OldMatchMapSize == pMatchResults->MatchMap.size())
+        if (OldMatchMapSize == m_pMatchResults->MatchMap.size())
             break;
 
-        OldMatchMapSize = pMatchResults->MatchMap.size();
+        OldMatchMapSize = m_pMatchResults->MatchMap.size();
     }
 
-    pDiffAlgorithms->RemoveDuplicates(&pMatchResults->MatchMap);
-	pMatchResults->CleanUp();
+    m_pdiffAlgorithms->RemoveDuplicates(&m_pMatchResults->MatchMap);
+	m_pMatchResults->CleanUp();
 
     m_pFunctionMatchInfoList->ClearFunctionMatchList();
     //AnalyzeFunctionSanity();
-    FunctionMatchInfoList *pFunctionMatchInfo = pDiffAlgorithms->GenerateFunctionMatchInfo(&pMatchResults->MatchMap, &pMatchResults->ReverseAddressMap);
+    FunctionMatchInfoList *pFunctionMatchInfo = m_pdiffAlgorithms->GenerateFunctionMatchInfo(&m_pMatchResults->MatchMap, &m_pMatchResults->ReverseAddressMap);
     MATCHMAP *pFunctionLevelOptionmizedMap = DoFunctionLevelMatchOptimizing(pFunctionMatchInfo);
 
     /* TODO: Iterate MATCHMAP and add to the main map
@@ -516,7 +504,7 @@ bool IDASessions::Analyze()
             {
                 RemoveMatchData((*it)->Addresses[0], (*it)->Addresses[1]);
                 add_current_entry = true;
-                if (pDumpAddressChecker && pDumpAddressChecker->IsDumpPair((*it)->Addresses[0], (*it)->Addresses[1]))
+                if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair((*it)->Addresses[0], (*it)->Addresses[1]))
                     debug = true;
                 operation = "Remove";
             }
@@ -538,7 +526,7 @@ bool IDASessions::Analyze()
             {
                 RemoveMatchData((*it)->Addresses[0], (*it)->Addresses[1]);
                 add_current_entry = true;
-                if (pDumpAddressChecker && pDumpAddressChecker->IsDumpPair((*it)->Addresses[0], (*it)->Addresses[1]))
+                if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair((*it)->Addresses[0], (*it)->Addresses[1]))
                     debug = true;
                 operation = "Remove";
             }
@@ -557,18 +545,18 @@ bool IDASessions::Analyze()
     }
     */
 
-    m_pFunctionMatchInfoList = pDiffAlgorithms->GenerateFunctionMatchInfo(&pMatchResults->MatchMap, &pMatchResults->ReverseAddressMap);
+    m_pFunctionMatchInfoList = m_pdiffAlgorithms->GenerateFunctionMatchInfo(&m_pMatchResults->MatchMap, &m_pMatchResults->ReverseAddressMap);
     return true;
 }
 
 void IDASessions::AppendToMatchMap(MATCHMAP  *pBaseMap, MATCHMAP  *pTemporaryMap)
 {
-    multimap <va_t, MatchData>::iterator match_map_iter;
+    multimap <va_t, MatchData>::iterator matchMapIterator;
 
     Logger.Log(10, LOG_DIFF_MACHINE, "%s: Appending %u Items To MatchMap\n", __FUNCTION__, pTemporaryMap->size());
-    for (match_map_iter = pTemporaryMap->begin(); match_map_iter != pTemporaryMap->end(); match_map_iter++)
+    for (matchMapIterator = pTemporaryMap->begin(); matchMapIterator != pTemporaryMap->end(); matchMapIterator++)
     {
-        pBaseMap->insert(MatchMap_Pair(match_map_iter->first, match_map_iter->second));
+        pBaseMap->insert(MatchMap_Pair(matchMapIterator->first, matchMapIterator->second));
     }
 }
 
@@ -618,7 +606,7 @@ int IDASessions::GetMatchRate(va_t unpatched_address, va_t patched_address)
         target_fingerprint_map_Iter != TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end()
         )
     {
-        return pDiffAlgorithms->GetFingerPrintMatchRate(
+        return m_pdiffAlgorithms->GetFingerPrintMatchRate(
             source_fingerprint_map_Iter->second,
             target_fingerprint_map_Iter->second);
     }
@@ -635,10 +623,10 @@ void IDASessions::GetMatchStatistics(
 )
 {
     bool debug = false;
-    if (pDumpAddressChecker &&
+    if (m_pdumpAddressChecker &&
         (
-        (index == 0 && pDumpAddressChecker->IsDumpPair(address, 0)) ||
-            (index == 1 && pDumpAddressChecker->IsDumpPair(0, address))
+        (index == 0 && m_pdumpAddressChecker->IsDumpPair(address, 0)) ||
+            (index == 1 && m_pdumpAddressChecker->IsDumpPair(0, address))
             )
         )
         debug = true;
@@ -678,7 +666,7 @@ void IDASessions::GetMatchStatistics(
                 if (p_basic_block)
                     target_fingerprint_len = p_basic_block->FingerprintLen;
 
-                if (debug || pDumpAddressChecker->IsDumpPair(pMatchData->Addresses[0], pMatchData->Addresses[1]))
+                if (debug || m_pdumpAddressChecker->IsDumpPair(pMatchData->Addresses[0], pMatchData->Addresses[1]))
                     Logger.Log(10, LOG_DIFF_MACHINE | LOG_MATCH_RATE, "%s: Function: %X Different block(%d): %X-%X (%d%%) Fingerprint Lengths (%d:%d)\n", __FUNCTION__, address, index, pMatchData->Addresses[0], pMatchData->Addresses[1], pMatchData->MatchRate, source_fingerprint_len, target_fingerprint_len);
 
                 if (source_fingerprint_len > 0 && target_fingerprint_len > 0)
@@ -704,26 +692,26 @@ void IDASessions::GetMatchStatistics(
 BOOL IDASessions::IsInUnidentifiedBlockHash(int index, va_t address)
 {
     if (index == 0)
-        return SourceUnidentifedBlockHash.find(address) != SourceUnidentifedBlockHash.end();
+        return m_sourceUnidentifedBlockHash.find(address) != m_sourceUnidentifedBlockHash.end();
     else
-        return TargetUnidentifedBlockHash.find(address) != TargetUnidentifedBlockHash.end();
+        return m_targetUnidentifedBlockHash.find(address) != m_targetUnidentifedBlockHash.end();
 }
 
 int IDASessions::GetUnidentifiedBlockCount(int index)
 {
     if (index == 0)
-        return SourceUnidentifedBlockHash.size();
+        return m_sourceUnidentifedBlockHash.size();
     else
-        return TargetUnidentifedBlockHash.size();
+        return m_targetUnidentifedBlockHash.size();
 }
 
 CodeBlock IDASessions::GetUnidentifiedBlock(int index, int i)
 {
     /*
     if( index==0 )
-        return SourceUnidentifedBlockHash.at( i );
+        return m_sourceUnidentifedBlockHash.at( i );
     else
-        return TargetUnidentifedBlockHash.at( i );
+        return m_targetUnidentifedBlockHash.at( i );
         */
 
     CodeBlock x;
@@ -742,135 +730,76 @@ va_t IDASessions::DumpFunctionMatchInfo(int index, va_t address)
         block_address = TargetIDASession->GetBlockAddress( address );
     */
 
-    multimap <va_t, MatchData>::iterator match_map_iter;
+    multimap <va_t, MatchData>::iterator matchMapIterator;
     if (index == 0)
     {
         SourceIDASession->DumpBlockInfo(block_address);
-        match_map_iter = pMatchResults->MatchMap.find(block_address);
-        while (match_map_iter != pMatchResults->MatchMap.end() &&
-            match_map_iter->first == block_address)
+        matchMapIterator = m_pMatchResults->MatchMap.find(block_address);
+        while (matchMapIterator != m_pMatchResults->MatchMap.end() &&
+            matchMapIterator->first == block_address)
         {
-            //TODO: DumpMatchMapIterInfo("", match_map_iter);
-            TargetIDASession->DumpBlockInfo(match_map_iter->second.Addresses[1]);
-            match_map_iter++;
+            //TODO: DumpMatchMapIterInfo("", matchMapIterator);
+            TargetIDASession->DumpBlockInfo(matchMapIterator->second.Addresses[1]);
+            matchMapIterator++;
         }
     }
     else
     {
         TargetIDASession->DumpBlockInfo(block_address);
-        multimap <va_t, va_t>::iterator reverse_match_map_iterator;
-        reverse_match_map_iterator = pMatchResults->ReverseAddressMap.find(block_address);
-        if (reverse_match_map_iterator != pMatchResults->ReverseAddressMap.end())
+        multimap <va_t, va_t>::iterator reverse_matchMapIteratorator;
+        reverse_matchMapIteratorator = m_pMatchResults->ReverseAddressMap.find(block_address);
+        if (reverse_matchMapIteratorator != m_pMatchResults->ReverseAddressMap.end())
         {
-            //DumpMatchMapIterInfo( "", match_map_iter );
-            //TheSource->DumpBlockInfo( match_map_iter->second.Addresses[1] );
-            match_map_iter++;
+            //DumpMatchMapIterInfo( "", matchMapIterator );
+            //TheSource->DumpBlockInfo( matchMapIterator->second.Addresses[1] );
+            matchMapIterator++;
         }
     }
 
     return 0L;
 }
 
-void IDASessions::RemoveMatchData(va_t source_address, va_t target_address)
+void IDASessions::RemoveMatchData(va_t sourceAddress, va_t targetAddress)
 {
-    for (multimap <va_t, MatchData>::iterator it = pMatchResults->MatchMap.find(source_address);
-        it != pMatchResults->MatchMap.end() && it->first == source_address;
+    for (multimap <va_t, MatchData>::iterator it = m_pMatchResults->MatchMap.find(sourceAddress);
+        it != m_pMatchResults->MatchMap.end() && it->first == sourceAddress;
         it++
         )
     {
-        if (it->second.Addresses[1] != target_address)
+        if (it->second.Addresses[1] != targetAddress)
             continue;
 
-        it = pMatchResults->MatchMap.erase(it);
+        it = m_pMatchResults->MatchMap.erase(it);
     }
 
-    for (multimap <va_t, va_t>::iterator it = pMatchResults->ReverseAddressMap.find(target_address);
-        it != pMatchResults->ReverseAddressMap.end() && it->first == target_address;
+    for (multimap <va_t, va_t>::iterator it = m_pMatchResults->ReverseAddressMap.find(targetAddress);
+        it != m_pMatchResults->ReverseAddressMap.end() && it->first == targetAddress;
         it++)
     {
-        if (it->second != source_address)
+        if (it->second != sourceAddress)
             continue;
 
-        it = pMatchResults->ReverseAddressMap.erase(it);
+        it = m_pMatchResults->ReverseAddressMap.erase(it);
     }
 }
 
 MatchMapList *IDASessions::GetMatchData(int index, va_t address, BOOL erase)
 {
-    MatchMapList *pMatchMapList;
+    MatchMapList *pMatchMapList = NULL;
 
-    if (!pMatchResults && m_diffDisassemblyStorage)
+    if(m_pMatchResults)
     {
-        pMatchMapList = m_diffDisassemblyStorage->ReadMatchMap(SourceID, TargetID, index, address, erase);
+        pMatchMapList = m_pMatchResults->GetMatchData(index, address, erase);
     }
-    else
+    else if (m_diffStorage)
     {
-        pMatchMapList = new MatchMapList();
-        multimap<va_t, va_t> addressPairs;
-
-        if (index == 1)
-        {
-            for (multimap <va_t, va_t>::iterator it = pMatchResults->ReverseAddressMap.find(address);
-                it != pMatchResults->ReverseAddressMap.end() && it->first == address;
-                it++)
-            {
-                addressPairs.insert(pair<va_t, va_t>(it->second, address));
-
-                if (erase)
-                {
-                    it = pMatchResults->ReverseAddressMap.erase(it);
-                }
-            }
-        }
-        else
-        {
-            addressPairs.insert(pair<va_t, va_t>(address, 0));
-        }
-
-        for (auto& val : addressPairs)
-        {
-            va_t source_address = val.first;
-            va_t target_address = val.second;
-
-            multimap <va_t, MatchData>::iterator match_map_iter;
-            for (match_map_iter = pMatchResults->MatchMap.find(source_address);
-                match_map_iter != pMatchResults->MatchMap.end() && match_map_iter->first == source_address;
-                match_map_iter++
-                )
-            {
-                if (target_address != 0 && match_map_iter->second.Addresses[1] != target_address)
-                    continue;
-
-                Logger.Log(20, LOG_DIFF_MACHINE, "%s: %u 0x%X returns %X-%X\r\n", __FUNCTION__, index, source_address, match_map_iter->second.Addresses[0], match_map_iter->second.Addresses[1]);
-
-                if (erase)
-                {
-                    //Erase matching reverse address map entries
-                    match_map_iter = pMatchResults->MatchMap.erase(match_map_iter);
-
-                    va_t match_target_address = match_map_iter->second.Addresses[1];
-                    va_t match_source_address = match_map_iter->second.Addresses[0];
-
-                    for (multimap <va_t, va_t>::iterator reverse_match_map_iter = pMatchResults->ReverseAddressMap.find(match_target_address);
-                        reverse_match_map_iter != pMatchResults->ReverseAddressMap.end() && reverse_match_map_iter->first == match_target_address;
-                        reverse_match_map_iter++
-                        )
-                    {
-                        if (reverse_match_map_iter->second == match_source_address)
-                            reverse_match_map_iter = pMatchResults->ReverseAddressMap.erase(reverse_match_map_iter);
-                    }
-                }
-                else
-                {
-                    MatchData *new_match_data = new MatchData();
-                    memcpy(new_match_data, &match_map_iter->second, sizeof(MatchData));
-                    pMatchMapList->Add(new_match_data);
-                }
-            }
-        }
+        pMatchMapList = m_diffStorage->ReadMatchMap(SourceID, TargetID, index, address, erase);
     }
 
-    Logger.Log(20, LOG_DIFF_MACHINE, "%s: %u 0x%X Returns %d entries\r\n", __FUNCTION__, index, address, pMatchMapList->Size());
+    if (pMatchMapList)
+    {
+        Logger.Log(20, LOG_DIFF_MACHINE, "%s: %u 0x%X Returns %d entries\r\n", __FUNCTION__, index, address, pMatchMapList->Size());
+    }
     return pMatchMapList;
 }
 
@@ -882,7 +811,7 @@ va_t IDASessions::GetMatchAddr(int index, va_t address)
     return matchAddress;
 }
 
-BOOL IDASessions::Save(DisassemblyStorage & disassemblyStorage, unordered_set <va_t>  *pTheSourceSelectedAddresses, unordered_set <va_t>  *pTheTargetSelectedAddresses)
+BOOL IDASessions::Save(Storage & disassemblyStorage, unordered_set <va_t>  *pTheSourceSelectedAddresses, unordered_set <va_t>  *pTheTargetSelectedAddresses)
 {
     if (!SourceIDASession || !TargetIDASession)
         return FALSE;
@@ -892,12 +821,12 @@ BOOL IDASessions::Save(DisassemblyStorage & disassemblyStorage, unordered_set <v
     disassemblyStorage.AddFileInfo("Source", SourceDBName.c_str(), SourceID, SourceFunctionAddress);
     disassemblyStorage.AddFileInfo("Target", TargetDBName.c_str(), TargetID, TargetFunctionAddress);
 
-    multimap <va_t, MatchData>::iterator match_map_iter;
+    multimap <va_t, MatchData>::iterator matchMapIterator;
 
-    Logger.Log(10, LOG_DIFF_MACHINE, "DiffResults->MatchMap.size()=%u\n", pMatchResults->MatchMap.size());
-    Logger.Log(10, LOG_DIFF_MACHINE, "DiffResults->MatchMap.size()=%u\n", pMatchResults->MatchMap.size());
+    Logger.Log(10, LOG_DIFF_MACHINE, "DiffResults->MatchMap.size()=%u\n", m_pMatchResults->MatchMap.size());
+    Logger.Log(10, LOG_DIFF_MACHINE, "DiffResults->MatchMap.size()=%u\n", m_pMatchResults->MatchMap.size());
 
-    for (auto& val : pMatchResults->MatchMap)
+    for (auto& val : m_pMatchResults->MatchMap)
     {
         if (
             pTheSourceSelectedAddresses &&
@@ -993,8 +922,8 @@ BOOL IDASessions::Create(const char *DiffDBFilename)
 {
     Logger.Log(10, LOG_DIFF_MACHINE, "%s\n", __FUNCTION__);
 
-    m_diffDisassemblyStorage = (DisassemblyStorage*)(new SQLiteDisassemblyStorage(DiffDBFilename));
-    FileList DiffFileList = m_diffDisassemblyStorage->ReadFileList();
+    m_diffStorage = (Storage*)(new SQLiteStorage(DiffDBFilename));
+    FileList DiffFileList = m_diffStorage->ReadFileList();
 
     if (DiffFileList.SourceFilename.size() > 0 && DiffFileList.TargetFilename.size() > 0)
     {
@@ -1030,10 +959,10 @@ BOOL IDASessions::Create(const char *DiffDBFilename)
     if (SourceDBName.size() > 0 && TargetDBName.size() > 0)
     {
         Logger.Log(10, LOG_DIFF_MACHINE, "	Loading %s\n", SourceDBName.c_str());
-        m_sourceDisassemblyStorage = new SQLiteDisassemblyStorage(SourceDBName.c_str());
+        m_sourceStorage = new SQLiteStorage(SourceDBName.c_str());
 
         Logger.Log(10, LOG_DIFF_MACHINE, "	Loading %s\n", TargetDBName.c_str());
-        m_targetDisassemblyStorage = new SQLiteDisassemblyStorage(TargetDBName.c_str());
+        m_targetStorage = new SQLiteStorage(TargetDBName.c_str());
         SetTarget(TargetDBName.c_str(), 1, TargetFunctionAddress);
     }
 
@@ -1048,11 +977,11 @@ BOOL IDASessions::Load(const char *DiffDBFilename)
     return _Load();
 }
 
-BOOL IDASessions::Load(DisassemblyStorage  *DiffDB)
+BOOL IDASessions::Load(Storage  *p_disassemblyStorage)
 {
-    m_diffDisassemblyStorage = DiffDB;
-    m_sourceDisassemblyStorage = DiffDB;
-    m_targetDisassemblyStorage = DiffDB;
+    m_diffStorage = p_disassemblyStorage;
+    m_sourceStorage = p_disassemblyStorage;
+    m_targetStorage = p_disassemblyStorage;
 
     return _Load();
 }
@@ -1067,7 +996,7 @@ BOOL IDASessions::_Load()
         SourceIDASession = NULL;
     }
 
-    SourceIDASession = new IDASession(m_sourceDisassemblyStorage);
+    SourceIDASession = new IDASession(m_sourceStorage);
 
     Logger.Log(10, LOG_DIFF_MACHINE, "SourceFunctionAddress: %X\n", SourceFunctionAddress);
     SourceIDASession->AddAnalysisTargetFunction(SourceFunctionAddress);
@@ -1085,7 +1014,7 @@ BOOL IDASessions::_Load()
         TargetIDASession = NULL;
     }
 
-    TargetIDASession = new IDASession(m_targetDisassemblyStorage);
+    TargetIDASession = new IDASession(m_targetStorage);
     TargetIDASession->AddAnalysisTargetFunction(TargetFunctionAddress);
     TargetIDASession->SetFileID(TargetID);
 
@@ -1095,44 +1024,9 @@ BOOL IDASessions::_Load()
         TargetIDASession->Load();
     }
 
-    const char *query = "";
-
-    if (ShowFullMatched)
+    if (LoadMatchResults)
     {
-        if (ShowNonMatched)
-        {
-            query = "SELECT SourceAddress, EndAddress, TargetAddress, BlockType, MatchRate, SourceFunctionName, Type, TargetFunctionName, MatchCountForTheSource, NoneMatchCountForTheSource, MatchCountWithModificationForTheSource, MatchCountForTheTarget, NoneMatchCountForTheTarget, MatchCountWithModificationForTheTarget From "
-                FUNCTION_MATCH_INFO_TABLE
-                " WHERE TheSourceFileID=%u AND TheTargetFileID=%u";
-        }
-        else
-        {
-            query = "SELECT SourceAddress, EndAddress, TargetAddress, BlockType, MatchRate, SourceFunctionName, Type, TargetFunctionName, MatchCountForTheSource, NoneMatchCountForTheSource, MatchCountWithModificationForTheSource, MatchCountForTheTarget, NoneMatchCountForTheTarget, MatchCountWithModificationForTheTarget From "
-                FUNCTION_MATCH_INFO_TABLE
-                " WHERE TheSourceFileID=%u AND TheTargetFileID=%u AND MatchRate != 0";
-        }
-    }
-    else
-    {
-        if (ShowNonMatched)
-        {
-            query = "SELECT SourceAddress, EndAddress, TargetAddress, BlockType, MatchRate, SourceFunctionName, Type, TargetFunctionName, MatchCountForTheSource, NoneMatchCountForTheSource, MatchCountWithModificationForTheSource, MatchCountForTheTarget, NoneMatchCountForTheTarget, MatchCountWithModificationForTheTarget From "
-                FUNCTION_MATCH_INFO_TABLE
-                " WHERE TheSourceFileID=%u AND TheTargetFileID=%u AND (NoneMatchCountForTheSource != 0 OR NoneMatchCountForTheTarget != 0 OR MatchCountWithModificationForTheSource!=0 OR MatchCountWithModificationForTheTarget !=0 )";
-        }
-        else
-        {
-            query = "SELECT SourceAddress, EndAddress, TargetAddress, BlockType, MatchRate, SourceFunctionName, Type, TargetFunctionName, MatchCountForTheSource, NoneMatchCountForTheSource, MatchCountWithModificationForTheSource, MatchCountForTheTarget, NoneMatchCountForTheTarget, MatchCountWithModificationForTheTarget From "
-                FUNCTION_MATCH_INFO_TABLE
-                " WHERE TheSourceFileID=%u AND TheTargetFileID=%u AND (NoneMatchCountForTheSource != 0 OR NoneMatchCountForTheTarget != 0 OR MatchCountWithModificationForTheSource!=0 OR MatchCountWithModificationForTheTarget !=0 ) AND MatchRate != 0";
-        }
-    }
-
-    //TODO: FunctionMatchList = m_diffDisassemblyStorage->QueryFunctionMatches(query, SourceID, TargetID);
-
-    if (LoadDiffResults)
-    {
-        pMatchResults = m_diffDisassemblyStorage->ReadMatchResults(SourceID, TargetID);
+        m_pMatchResults = m_diffStorage->ReadMatchResults(SourceID, TargetID);
     }
 
     return TRUE;
@@ -1160,9 +1054,9 @@ BREAKPOINTS IDASessions::ShowUnidentifiedAndModifiedBlocks()
 
             for (auto& val : SourceIDASession->GetFunctionMemberBlocks(val.SourceAddress))
             {
-                multimap <va_t, MatchData>::iterator match_map_iter = pMatchResults->MatchMap.find(val.Start);
+                multimap <va_t, MatchData>::iterator matchMapIterator = m_pMatchResults->MatchMap.find(val.Start);
 
-                if (match_map_iter != pMatchResults->MatchMap.end())
+                if (matchMapIterator != m_pMatchResults->MatchMap.end())
                 {
                     Logger.Log(10, LOG_DIFF_MACHINE, "Unmatched: %X", val.Start);
 
@@ -1173,18 +1067,18 @@ BREAKPOINTS IDASessions::ShowUnidentifiedAndModifiedBlocks()
                 }
                 else
                 {
-                    while (match_map_iter != pMatchResults->MatchMap.end() && (*match_map_iter).first != val.Start)
+                    while (matchMapIterator != m_pMatchResults->MatchMap.end() && (*matchMapIterator).first != val.Start)
                     {
-                        if ((*match_map_iter).second.MatchRate < 100)
+                        if ((*matchMapIterator).second.MatchRate < 100)
                         {
-                            Logger.Log(10, LOG_DIFF_MACHINE, "Modified: %X", (*match_map_iter).first);
+                            Logger.Log(10, LOG_DIFF_MACHINE, "Modified: %X", (*matchMapIterator).first);
 
                             if (breakpoints.SourceAddressMap.find(val.Start) == breakpoints.SourceAddressMap.end())
                                 breakpoints.SourceAddressMap.insert(val.Start);
 
                             found_source_blocks = true;
                         }
-                        match_map_iter++;
+                        matchMapIterator++;
                     }
                 }
             }
@@ -1200,9 +1094,9 @@ BREAKPOINTS IDASessions::ShowUnidentifiedAndModifiedBlocks()
 
             for (auto& val : TargetIDASession->GetFunctionMemberBlocks(val.TargetAddress))
             {
-                multimap <va_t, va_t>::iterator reverse_match_map_iter = pMatchResults->ReverseAddressMap.find(val.Start);
+                multimap <va_t, va_t>::iterator reverse_matchMapIterator = m_pMatchResults->ReverseAddressMap.find(val.Start);
 
-                if (reverse_match_map_iter == pMatchResults->ReverseAddressMap.end())
+                if (reverse_matchMapIterator == m_pMatchResults->ReverseAddressMap.end())
                 {
                     Logger.Log(10, LOG_DIFF_MACHINE, "Unmatched: %X", val.Start);
 
@@ -1213,21 +1107,21 @@ BREAKPOINTS IDASessions::ShowUnidentifiedAndModifiedBlocks()
                 }
                 else
                 {
-                    for (; reverse_match_map_iter != pMatchResults->ReverseAddressMap.end() && reverse_match_map_iter->first == val.Start; reverse_match_map_iter++)
+                    for (; reverse_matchMapIterator != m_pMatchResults->ReverseAddressMap.end() && reverse_matchMapIterator->first == val.Start; reverse_matchMapIterator++)
                     {
-                        multimap <va_t, MatchData>::iterator match_map_iter = pMatchResults->MatchMap.find(reverse_match_map_iter->second);
+                        multimap <va_t, MatchData>::iterator matchMapIterator = m_pMatchResults->MatchMap.find(reverse_matchMapIterator->second);
 
-                        while (match_map_iter != pMatchResults->MatchMap.end() && (*match_map_iter).first != reverse_match_map_iter->second)
+                        while (matchMapIterator != m_pMatchResults->MatchMap.end() && (*matchMapIterator).first != reverse_matchMapIterator->second)
                         {
-                            if ((*match_map_iter).second.MatchRate < 100)
+                            if ((*matchMapIterator).second.MatchRate < 100)
                             {
-                                Logger.Log(10, LOG_DIFF_MACHINE, "Modified: %X", (*match_map_iter).first);
+                                Logger.Log(10, LOG_DIFF_MACHINE, "Modified: %X", (*matchMapIterator).first);
 
                                 if (breakpoints.TargetAddressMap.find(val.Start) == breakpoints.TargetAddressMap.end())
                                     breakpoints.TargetAddressMap.insert(val.Start);
                                 found_target_blocks = true;
                             }
-                            match_map_iter++;
+                            matchMapIterator++;
                         }
                     }
                 }
@@ -1246,12 +1140,12 @@ BREAKPOINTS IDASessions::ShowUnidentifiedAndModifiedBlocks()
 
 void IDASessions::PrintMatchMapInfo()
 {
-	multimap <va_t, MatchData>::iterator match_map_iter;
+	multimap <va_t, MatchData>::iterator matchMapIterator;
 	int unique_match_count = 0;
 
-    for (auto& val : pMatchResults->MatchMap)
+    for (auto& val : m_pMatchResults->MatchMap)
 	{
-		if (pMatchResults->MatchMap.count(val.first) == 1)
+		if (m_pMatchResults->MatchMap.count(val.first) == 1)
 			unique_match_count++;
 	}
 
@@ -1260,9 +1154,9 @@ void IDASessions::PrintMatchMapInfo()
 	//Print Summary
 	//TODO: DiffResults->MatchMap -> save to database...
 
-    for (auto& val : pMatchResults->MatchMap)
+    for (auto& val : m_pMatchResults->MatchMap)
 	{
-		LogMessage(0, __FUNCTION__, "%X-%X ( %s )\n", val.first, val.second.Addresses[1], pDiffAlgorithms->GetMatchTypeStr(val.second.Type));
+		LogMessage(0, __FUNCTION__, "%X-%X ( %s )\n", val.first, val.second.Addresses[1], m_pdiffAlgorithms->GetMatchTypeStr(val.second.Type));
 	}
 
 	LogMessage(0, __FUNCTION__, "* *unidentified( 0 )\n");
@@ -1272,7 +1166,7 @@ void IDASessions::PrintMatchMapInfo()
 
     for (auto& val : SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map)
 	{
-		if (pMatchResults->MatchMap.find(val.first) == pMatchResults->MatchMap.end())
+		if (m_pMatchResults->MatchMap.find(val.first) == m_pMatchResults->MatchMap.end())
 		{
 			LogMessage(0, __FUNCTION__, "%X ", val.first);
 
@@ -1288,7 +1182,7 @@ void IDASessions::PrintMatchMapInfo()
 
     for (auto& val : TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map)
 	{
-		if (pMatchResults->ReverseAddressMap.find(val.first) == pMatchResults->ReverseAddressMap.end())
+		if (m_pMatchResults->ReverseAddressMap.find(val.first) == m_pMatchResults->ReverseAddressMap.end())
 		{
 			LogMessage(0, __FUNCTION__, "%X ", val.first);
 			if (patched_unidentified_number % 8 == 7)

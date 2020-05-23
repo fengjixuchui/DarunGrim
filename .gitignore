@@ -22,3 +22,15 @@
 /Src/Scripts/x64/Debug-x64
 /Src/Scripts/PythonExt.vcxproj.user
 /Src/Scripts/DiffEngine_wrap.cxx
+Src/DGEngine/Release/
+Src/DGEngine/x64/
+Src/IDAPlugin/Debug/
+Src/IDAPlugin/Release/
+Src/IDAPlugin/x64/
+x64/IDA64-Release/
+Src/Scripts/x64/
+Src/Scripts/x64/IDA64-Release/
+Debug/
+Release/
+x64/
+Lib/swigwin/
