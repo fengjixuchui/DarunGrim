@@ -10,7 +10,7 @@ using namespace stdext;
 #include "MatchResults.h"
 using namespace std;
 
-class Storage
+class DiffStorage
 {
 public:
     virtual void SetFileInfo(FileInfo *p_file_info)
@@ -31,47 +31,6 @@ public:
     {
     }
 
-    virtual int ProcessTLV(BYTE Type, PBYTE Data, DWORD Length)
-    {
-        return 0;
-    }
-
-    virtual void AddBasicBlock(PBasicBlock p_basic_block, int fileID = 0)
-    {
-    }
-
-    virtual void AddMapInfo(PMapInfo p_map_info, int fileID = 0)
-    {
-    }
-
-    virtual void ReadFunctionAddressMap(int fileID, unordered_set <va_t>& functionAddressMap)
-    {
-    }
-
-    virtual char *ReadFingerPrint(int fileID, va_t address)
-    {
-        return NULL;
-    }
-
-    virtual char *ReadName(int fileID, va_t address)
-    {
-        return NULL;
-    }
-
-    virtual va_t ReadBlockStartAddress(int fileID, va_t address)
-    {
-        return 0;
-    }
-
-    virtual void ReadBasicBlockInfo(int fileID, char *conditionStr, AnalysisInfo *analysisInfo)
-    {
-    }
-
-    virtual multimap <va_t, PMapInfo> *ReadMapInfo(int fileID, va_t address = 0, bool isFunction = false)
-    {
-        return NULL;
-    }
-
     virtual MatchMapList *ReadMatchMap(int sourceID, int targetID, int index, va_t address, bool erase)
     {
         return NULL;
@@ -82,9 +41,9 @@ public:
         return NULL;
     }
 
-    virtual list<BLOCK> ReadFunctionMemberAddresses(int fileID, va_t function_address)
+    virtual list<AddressRange> ReadFunctionMemberAddresses(int fileID, va_t function_address)
     {
-        list<BLOCK> ret;
+        list<AddressRange> ret;
         return ret;
     }
 
@@ -114,21 +73,6 @@ public:
     }
 
     virtual void DeleteMatches(int srcFileID, int dstFileID)
-    {
-    }
-
-
-    virtual char *ReadDisasmLine(int fileID, va_t startAddress)
-    {
-        return NULL;
-    }
-
-    virtual BasicBlock *ReadBasicBlock(int fileID, va_t address)
-    {
-        return NULL;
-    }
-
-    virtual void UpdateBasicBlock(int fileID, va_t address1, va_t address2)
     {
     }
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "MatchResults.h"
-#include "IDASession.h"
+#include "Loader.h"
 
 #define DEBUG_FUNCTION_LEVEL_MATCH_OPTIMIZING 1
 
@@ -18,8 +18,8 @@ private:
 	int DebugFlag;
 	DumpAddressChecker *m_pdumpAddressChecker;
 
-	IDASession *SourceIDASession;
-	IDASession *TargetIDASession;    
+	Loader *SourceLoader;
+	Loader *TargetLoader;    
 
 
 	void RevokeTreeMatchMapIterInfo(MATCHMAP *pMatchMap, va_t address, va_t match_address);
@@ -30,12 +30,12 @@ public:
 
 	void RemoveDuplicates(MATCHMAP* pMatchMap);
 	FunctionMatchInfoList* GenerateFunctionMatchInfo(MATCHMAP* pMatchMap, multimap <va_t, va_t>* pReverseAddressMap);
-	int GetFingerPrintMatchRate(unsigned char *unpatched_finger_print, unsigned char *patched_finger_print);
+	int GetInstructionHashMatchRate(unsigned char *unpatched_finger_print, unsigned char *patched_finger_print);
 
-	MATCHMAP *DoFingerPrintMatchInsideFunction(va_t SourceFunctionAddress, list <va_t>& SourceBlockAddresses, va_t TargetFunctionAddress, list <va_t>& TargetBlockAddresses);
-	MATCHMAP *DoFingerPrintMatch();
+	MATCHMAP *DoInstructionHashMatchInsideFunction(va_t SourceFunctionAddress, list <va_t>& SourceBlockAddresses, va_t TargetFunctionAddress, list <va_t>& TargetBlockAddresses);
+	MATCHMAP *DoInstructionHashMatch();
 
-	void PurgeFingerprintHashMap(MATCHMAP *pTemporaryMap);
+	void PurgeInstructionHashHashMap(MATCHMAP *pTemporaryMap);
     MATCHMAP *DoIsomorphMatch(MATCHMAP *pMainMatchMap, MATCHMAP *pOrigTemporaryMap, MATCHMAP *pTemporaryMap);
     MATCHMAP *DoFunctionMatch(MATCHMAP *pCurrentMatchMap, multimap <va_t, va_t> *functionMembersMapForSource, multimap <va_t, va_t> *functionMembersMapForTarget);
 

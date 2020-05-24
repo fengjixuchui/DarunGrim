@@ -42,9 +42,9 @@ struct FileList
 	string TargetFilename;
 };
 
-typedef struct _FingerPrintInfo_ {
+typedef struct _InstructionHashInfo_ {
 	va_t addr;
-} FingerPrintInfo,  *PFingerPrintInfo;
+} InstructionHashInfo,  *PInstructionHashInfo;
 
 typedef struct _FunctionMatchInfo_
 {
@@ -110,52 +110,6 @@ public:
         m_functionMatchInfoList.clear();
     }    
 };
-
-class hash_compare_fingerprint
-{
-public:
-	enum
-	{
-		bucket_size = 400000,
-		min_buckets = 4000
-	};
-public:
-	size_t operator() (/*[in]*/ const unsigned char *Bytes) const
-	{
-		size_t Key = 0;
-		for (int i = 0; i < *(unsigned short*)Bytes; i++)
-		{
-			Key += Bytes[sizeof(short) + i];
-		}
-		return  Key;
-	}
-public:
-	bool operator() (/*[in]*/const unsigned char *Bytes01,/*[in]*/ const unsigned char *Bytes02) const
-	{
-		if (Bytes01 == Bytes02)
-		{
-			return 0;
-		}
-
-		if (*(unsigned short*)Bytes01 == *(unsigned short*)Bytes02)
-		{
-			return (memcmp(Bytes01 + sizeof(unsigned short), Bytes02 + sizeof(unsigned short), *(unsigned short*)Bytes01) < 0);
-		}
-		return (*(unsigned short*)Bytes01 >  *(unsigned short*)Bytes02);
-	}
-};
-
-//,hash_compare<string,equ_str> 
-typedef struct _AnalysisInfo_ {
-	FileInfo file_info;
-	multimap <va_t, PBasicBlock> address_map;
-	multimap <va_t, string> address_disassembly_map;
-	multimap <unsigned char*, va_t, hash_compare_fingerprint> fingerprint_map;
-	multimap <va_t, unsigned char*> address_fingerprint_map;
-	multimap <string, va_t> name_map;
-	multimap <va_t, string> address_name_map;
-	multimap <va_t, PMapInfo> map_info_map;
-} AnalysisInfo,  *PAnalysisInfo;
 
 typedef struct _MatchData_ {
 	short Type;
@@ -252,25 +206,24 @@ public:
     }
 };
 
-enum { NAME_MATCH, FINGERPRINT_MATCH, TWO_LEVEL_FINGERPRINT_MATCH, TREE_MATCH, FINGERPRINT_INSIDE_FUNCTION_MATCH, FUNCTION_MATCH };
+enum { NAME_MATCH, INSTRUCTION_HASH_MATCH, TWO_LEVEL_INSTRUCTION_HASH_MATCH, TREE_MATCH, INSTRUCTION_HASH_INSIDE_FUNCTION_MATCH, FUNCTION_MATCH };
 
-typedef struct _AnalysisInfoList_ {
-	PAnalysisInfo p_analysis_info;
+typedef struct _DisassemblyHashMapsList_ {
+	PDisassemblyHashMaps p_analysis_info;
 	SOCKET socket;
 	va_t address;
-	struct _AnalysisInfoList_ *prev;
-	struct _AnalysisInfoList_ *next;
-} AnalysisInfoList;
+	struct _DisassemblyHashMapsList_ *prev;
+	struct _DisassemblyHashMapsList_ *next;
+} DisassemblyHashMapsList;
 
 typedef pair <va_t, PBasicBlock> AddrPBasicBlock_Pair;
 typedef pair <va_t, string> AddrDisassembly_Pair;
-typedef pair <unsigned char*, va_t> FingerPrintAddress_Pair;
-typedef pair <string, va_t*> TwoLevelFingerPrintAddress_Pair;
-typedef pair <va_t, unsigned char*> AddressFingerPrintAddress_Pair;
+typedef pair <unsigned char*, va_t> InstructionHashAddress_Pair;
+typedef pair <string, va_t*> TwoLevelInstructionHashAddress_Pair;
 typedef pair <string, va_t> NameAddress_Pair;
 typedef pair <va_t, string> AddressName_Pair;
 typedef pair <va_t, MatchData> MatchMap_Pair;
-typedef pair <unsigned char*, unsigned char*> Fingerprint_Pair;
+typedef pair <unsigned char*, unsigned char*> InstructionHash_Pair;
 
 #define STATUS_TREE_CHECKED 0x00000001
 #define STATUS_MAPPING_DISABLED 0x2

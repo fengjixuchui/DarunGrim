@@ -4,12 +4,15 @@
 #include <list>
 
 #include "Common.h"
-#include "IDASession.h"
+#include "Loader.h"
 #include "LogOperation.h"
 #include "MatchResults.h"
 #include "DiffAlgorithms.h"
 
-class IDASessions
+#include "DiffStorage.h"
+#include "DisassemblyStorage.h"
+
+class DiffLogic
 {
 private:
     int DebugFlag;
@@ -18,7 +21,7 @@ private:
     bool ShowNonMatched;
 
     bool LoadMatchResults;
-    bool LoadIDAController;
+    bool m_bloadMaps;
 
     int SourceID;
     string SourceDBName;
@@ -28,12 +31,12 @@ private:
     string TargetDBName;
     va_t TargetFunctionAddress;
 
-    Storage* m_diffStorage;
-    Storage* m_sourceStorage;
-    Storage* m_targetStorage;
+    DiffStorage* m_pdiffStorage;
+    DisassemblyStorage* m_psourceStorage;
+    DisassemblyStorage* m_ptargetStorage;
 
-    IDASession* SourceIDASession;
-    IDASession* TargetIDASession;
+    Loader* SourceLoader;
+    Loader* TargetLoader;
 
     MatchResults* m_pMatchResults;
     FunctionMatchInfoList* m_pFunctionMatchInfoList;
@@ -48,31 +51,31 @@ private:
 	BOOL _Load();
 
 public:
-    IDASessions(IDASession *the_source = NULL, IDASession *the_target = NULL);
-    ~IDASessions();
+    DiffLogic(Loader *the_source = NULL, Loader *the_target = NULL);
+    ~DiffLogic();
 
     void SetDumpAddressChecker(DumpAddressChecker *p_dump_address_checker)
     {
         m_pdumpAddressChecker = p_dump_address_checker;
     }
 
-    void SetSource(IDASession *NewSource)
+    void SetSource(Loader *NewSource)
     {
-        SourceIDASession = NewSource;
+        SourceLoader = NewSource;
     }
 
-    void SetTarget(IDASession *NewTarget)
+    void SetTarget(Loader *NewTarget)
     {
-        TargetIDASession = NewTarget;
+        TargetLoader = NewTarget;
     }
 
     void SetLoadMatchResults(bool NewLoadMatchResults)
     {
         LoadMatchResults = NewLoadMatchResults;
     }
-    void SetLoadIDAController(bool NewLoadIDAController)
+    void Setm_bloadMaps(bool Newm_bloadMaps)
     {
-        LoadIDAController = NewLoadIDAController;
+        m_bloadMaps = Newm_bloadMaps;
     }
 
     void SetSource(const char* db_filename, DWORD id = 1, va_t function_address = 0)
@@ -89,16 +92,16 @@ public:
         TargetFunctionAddress = function_address;
     }
 
-    void SetSource(Storage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
+    void SetSource(DisassemblyStorage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
     {
-        m_sourceStorage = disassemblyStorage;
+        m_psourceStorage = disassemblyStorage;
         SourceID = id;
         SourceFunctionAddress = function_address;
     }
 
-    void SetTarget(Storage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
+    void SetTarget(DisassemblyStorage* disassemblyStorage, DWORD id = 1, va_t function_address = 0)
     {
-        m_targetStorage = disassemblyStorage;
+        m_ptargetStorage = disassemblyStorage;
         TargetID = id;
         TargetFunctionAddress = function_address;
     }
@@ -111,17 +114,17 @@ public:
 
     BOOL Create(const char* DiffDBFilename);
     BOOL Load(const char* DiffDBFilename);
-    BOOL Load(Storage* disassemblyStorage);
+    BOOL Load(DiffStorage *p_diffStorage, DisassemblyStorage  *p_disassemblyStorage);
 
-    IDASession *GetSourceIDASession();
-    IDASession *GetTargetIDASession();
+    Loader *GetSourceLoader();
+    Loader *GetTargetLoader();
 
     void AppendToMatchMap(MATCHMAP* pBaseMap, MATCHMAP* pTemporaryMap);
     MatchMapList* GetMatchData(int index, va_t address, BOOL erase = FALSE);
     va_t GetMatchAddr(int index, va_t address);
     int GetMatchRate(va_t unpatched_address, va_t patched_address);
     void RemoveMatchData(va_t source_address, va_t target_address);
-    void PrintMatchMapInfo();
+    void PrintMatchControlFlow();
 
     va_t DumpFunctionMatchInfo(int index, va_t address);
 
@@ -138,6 +141,6 @@ public:
     int GetUnidentifiedBlockCount(int index);
     CodeBlock GetUnidentifiedBlock(int index, int i);
     BOOL IsInUnidentifiedBlockHash(int index, va_t address);
-    BOOL Save(Storage& disassemblyStorage, unordered_set <va_t> *pTheSourceSelectedAddresses = NULL, unordered_set <va_t> *pTheTargetSelectedAddresses = NULL);
+    BOOL Save(DisassemblyStorage& disassemblyStorage, unordered_set <va_t> *pTheSourceSelectedAddresses = NULL, unordered_set <va_t> *pTheTargetSelectedAddresses = NULL);
     BREAKPOINTS ShowUnidentifiedAndModifiedBlocks();
 };

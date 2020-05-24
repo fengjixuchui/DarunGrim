@@ -6,7 +6,6 @@
 #include <tchar.h>
 #include <malloc.h>
 
-#include "Utility.h"
 #include "Diff.h"
 #include "DiffAlgorithms.h"
 #include "Log.h"
@@ -26,7 +25,7 @@ DiffAlgorithms::~DiffAlgorithms()
 {
 }
 
-int DiffAlgorithms::GetFingerPrintMatchRate(unsigned char *unpatched_finger_print, unsigned char *patched_finger_print)
+int DiffAlgorithms::GetInstructionHashMatchRate(unsigned char *unpatched_finger_print, unsigned char *patched_finger_print)
 {
 	int rate = 0;
 	char *unpatched_finger_print_str = BytesWithLengthAmbleToHex(unpatched_finger_print);
@@ -209,7 +208,7 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 			LogMessage(0, __FUNCTION__, "Skipping %X %X\n", match_map_iter->first, match_map_iter->second.Addresses[1]);
 			continue;
 		}
-		PBasicBlock p_basic_block = SourceIDASession->GetBasicBlock(match_map_iter->first);
+		PBasicBlock p_basic_block = SourceLoader->GetBasicBlock(match_map_iter->first);
 
 		if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair(match_map_iter->first, 0))
 		{
@@ -230,8 +229,8 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 				last_patched_addr != match_info.TargetAddress
 				)
 			{
-				match_info.SourceFunctionName = SourceIDASession->GetName(match_info.SourceAddress);
-				match_info.TargetFunctionName = TargetIDASession->GetName(match_info.TargetAddress);
+				match_info.SourceFunctionName = SourceLoader->GetSymbol(match_info.SourceAddress);
+				match_info.TargetFunctionName = TargetLoader->GetSymbol(match_info.TargetAddress);
 
 				float source_match_rate = 0.0;
 
@@ -274,17 +273,17 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 	LogMessage(0, __FUNCTION__, "pFunctionMatchInfoList->Size()=%u\n", pFunctionMatchInfoList->Size());
 
 	int unpatched_unidentified_number = 0;
-	for (auto& val : SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map)
+	for (auto& val : SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap)
 	{
 		if (pMatchMap->find(val.first) == pMatchMap->end())
 		{
-			PBasicBlock p_basic_block = SourceIDASession->GetBasicBlock(val.first);
+			PBasicBlock p_basic_block = SourceLoader->GetBasicBlock(val.first);
 			if (p_basic_block)
 			{
 				if (p_basic_block->BlockType == FUNCTION_BLOCK)
 				{
 					match_info.SourceAddress = p_basic_block->StartAddress;
-					match_info.SourceFunctionName = SourceIDASession->GetName(match_info.SourceAddress);
+					match_info.SourceFunctionName = SourceLoader->GetSymbol(match_info.SourceAddress);
 					match_info.BlockType = p_basic_block->BlockType;
 					match_info.EndAddress = p_basic_block->EndAddress;
 					match_info.Type = 0;
@@ -310,11 +309,11 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 	//TODO: LogMessage(0, __FUNCTION__, "unpatched_unidentified_number=%u\n", m_sourceUnidentifedBlockHash.size());
 
 	int patched_unidentified_number = 0;
-	for (auto& val : TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map)
+	for (auto& val : TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap)
 	{
 		if (pReverseAddressMap->find(val.first) == pReverseAddressMap->end())
 		{
-			PBasicBlock p_basic_block = TargetIDASession->GetBasicBlock(val.first);
+			PBasicBlock p_basic_block = TargetLoader->GetBasicBlock(val.first);
 			if (p_basic_block)
 			{
 				if (p_basic_block->BlockType == FUNCTION_BLOCK)
@@ -325,7 +324,7 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 					match_info.EndAddress = 0;
 					match_info.Type = 0;
 					match_info.TargetAddress = p_basic_block->StartAddress;
-					match_info.TargetFunctionName = TargetIDASession->GetName(match_info.TargetAddress);
+					match_info.TargetFunctionName = TargetLoader->GetSymbol(match_info.TargetAddress);
 					match_info.MatchRate = 0;
 					match_info.MatchCountForTheSource = 0;
 					match_info.MatchCountWithModificationForTheSource = 0;
@@ -352,21 +351,21 @@ FunctionMatchInfoList *DiffAlgorithms::GenerateFunctionMatchInfo(MATCHMAP *pMatc
 }
 
 /*REMOVE:
-BOOL DiffAlgorithms::DeleteMatchInfo(Storage & disassemblyStorage)
+BOOL DiffAlgorithms::DeleteMatchInfo(DiffStorage & diffStorage)
 {
 	if (SourceFunctionAddress > 0 && targetFunctionAddress > 0)
 	{
-		SourceIDASession->DeleteMatchInfo(&disassemblyStorage, SourceIDASession->GetFileID(), SourceFunctionAddress);
-		TargetIDASession->DeleteMatchInfo(&disassemblyStorage, TargetIDASession->GetFileID(), targetFunctionAddress);
+		SourceLoader->DeleteMatchInfo(&diffStorage, SourceLoader->GetFileID(), SourceFunctionAddress);
+		TargetLoader->DeleteMatchInfo(&diffStorage, TargetLoader->GetFileID(), targetFunctionAddress);
 	}
 	else
 	{
-		disassemblyStorage.DeleteMatches(SourceIDASession->GetFileID(), TargetIDASession->GetFileID());
+		diffStorage.DeleteMatches(SourceLoader->GetFileID(), TargetLoader->GetFileID());
 	}
 	return TRUE;
 }*/
 
-void DiffAlgorithms::PurgeFingerprintHashMap(MATCHMAP *pTemporaryMap)
+void DiffAlgorithms::PurgeInstructionHashHashMap(MATCHMAP *pTemporaryMap)
 {
 	multimap <va_t, MatchData>::iterator match_map_iter;
 
@@ -374,30 +373,30 @@ void DiffAlgorithms::PurgeFingerprintHashMap(MATCHMAP *pTemporaryMap)
 		match_map_iter != pTemporaryMap->end();
 		match_map_iter++)
 	{
-		//Remove from fingerprint hash map
-		multimap <va_t, unsigned char*>::iterator address_fingerprint_map_Iter;
-		address_fingerprint_map_Iter = SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(match_map_iter->second.Addresses[0]);
-		if (address_fingerprint_map_Iter != SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+		//Remove from instruction_hash hash map
+		multimap <va_t, unsigned char*>::iterator addressToInstructionHashMap_Iter;
+		addressToInstructionHashMap_Iter = SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(match_map_iter->second.Addresses[0]);
+		if (addressToInstructionHashMap_Iter != SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 		{
-			SourceIDASession->GetClientAnalysisInfo()->fingerprint_map.erase(address_fingerprint_map_Iter->second);
+			SourceLoader->GetClientDisassemblyHashMaps()->instructionHashMap.erase(addressToInstructionHashMap_Iter->second);
 		}
-		address_fingerprint_map_Iter = TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(match_map_iter->second.Addresses[1]);
-		if (address_fingerprint_map_Iter != TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+		addressToInstructionHashMap_Iter = TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(match_map_iter->second.Addresses[1]);
+		if (addressToInstructionHashMap_Iter != TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 		{
-			TargetIDASession->GetClientAnalysisInfo()->fingerprint_map.erase(address_fingerprint_map_Iter->second);
+			TargetLoader->GetClientDisassemblyHashMaps()->instructionHashMap.erase(addressToInstructionHashMap_Iter->second);
 		}
 	}
 
 	LogMessage(0, __FUNCTION__, "%u-%u\n",
-		SourceIDASession->GetClientAnalysisInfo()->fingerprint_map.size(),
-		TargetIDASession->GetClientAnalysisInfo()->fingerprint_map.size());
+		SourceLoader->GetClientDisassemblyHashMaps()->instructionHashMap.size(),
+		TargetLoader->GetClientDisassemblyHashMaps()->instructionHashMap.size());
 }
 
-MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAddress, list <va_t>& SourceBlockAddresses, va_t targetFunctionAddress, list <va_t>& TargetBlockAddresses)
+MATCHMAP *DiffAlgorithms::DoInstructionHashMatchInsideFunction(va_t SourceFunctionAddress, list <va_t>& SourceBlockAddresses, va_t targetFunctionAddress, list <va_t>& TargetBlockAddresses)
 {
     MATCHMAP *pMatchMap = new MATCHMAP;
 
-	//Fingerprint match on SourceBlockAddresses, TargetBlockAddresse
+	//InstructionHash match on SourceBlockAddresses, TargetBlockAddresse
 	/*
 	list <va_t>::iterator SourceBlockAddressIter;
 	for ( SourceBlockAddressIter=SourceBlockAddresses.begin();SourceBlockAddressIter!=SourceBlockAddresses.end();SourceBlockAddressIter++ )
@@ -412,21 +411,21 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 		}
 	}*/
 	//Logger.Log( 10, LOG_DIFF_MACHINE,  "%s: Entry\n");
-	multimap <va_t, unsigned char*>::iterator address_fingerprint_map_Iter;
-	unordered_map <unsigned char*, AddressesInfo, hash_compare_fingerprint> fingerprint_map;
-	unordered_map <unsigned char*, AddressesInfo, hash_compare_fingerprint>::iterator fingerprint_map_iter;
+	multimap <va_t, unsigned char*>::iterator addressToInstructionHashMap_Iter;
+	unordered_map <unsigned char*, AddressesInfo, hash_compare_instruction_hash> instructionHashMap;
+	unordered_map <unsigned char*, AddressesInfo, hash_compare_instruction_hash>::iterator instructionHashMap_iter;
 
 	for (va_t SourceAddress : SourceBlockAddresses)
 	{
 		//Logger.Log( 10, LOG_DIFF_MACHINE,  "\tSource=%X\n", SourceAddress );
-		address_fingerprint_map_Iter = SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(SourceAddress);
-		if (address_fingerprint_map_Iter != SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+		addressToInstructionHashMap_Iter = SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(SourceAddress);
+		if (addressToInstructionHashMap_Iter != SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 		{
-			unsigned char *FingerPrint = address_fingerprint_map_Iter->second;
-			fingerprint_map_iter = fingerprint_map.find(FingerPrint);
-			if (fingerprint_map_iter != fingerprint_map.end())
+			unsigned char *InstructionHash = addressToInstructionHashMap_Iter->second;
+			instructionHashMap_iter = instructionHashMap.find(InstructionHash);
+			if (instructionHashMap_iter != instructionHashMap.end())
 			{
-				fingerprint_map_iter->second.Overflowed = TRUE;
+				instructionHashMap_iter->second.Overflowed = TRUE;
 			}
 			else
 			{
@@ -434,7 +433,7 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 				OneAddressesInfo.Overflowed = FALSE;
 				OneAddressesInfo.SourceAddress = SourceAddress;
 				OneAddressesInfo.TargetAddress = 0L;
-				fingerprint_map.insert(pair<unsigned char*, AddressesInfo>(FingerPrint, OneAddressesInfo));
+				instructionHashMap.insert(pair<unsigned char*, AddressesInfo>(InstructionHash, OneAddressesInfo));
 			}
 		}
 	}
@@ -442,17 +441,17 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 	for (va_t targetAddress: TargetBlockAddresses)
 	{
 		//Logger.Log( 10, LOG_DIFF_MACHINE,  "\tTarget=%X\n", TargetAddress );
-		address_fingerprint_map_Iter = TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(targetAddress);
-		if (address_fingerprint_map_Iter != TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+		addressToInstructionHashMap_Iter = TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(targetAddress);
+		if (addressToInstructionHashMap_Iter != TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 		{
-			unsigned char *FingerPrint = address_fingerprint_map_Iter->second;
-			fingerprint_map_iter = fingerprint_map.find(FingerPrint);
-			if (fingerprint_map_iter != fingerprint_map.end())
+			unsigned char *InstructionHash = addressToInstructionHashMap_Iter->second;
+			instructionHashMap_iter = instructionHashMap.find(InstructionHash);
+			if (instructionHashMap_iter != instructionHashMap.end())
 			{
-				if (fingerprint_map_iter->second.TargetAddress != 0L)
-					fingerprint_map_iter->second.Overflowed = TRUE;
+				if (instructionHashMap_iter->second.TargetAddress != 0L)
+					instructionHashMap_iter->second.Overflowed = TRUE;
 				else
-					fingerprint_map_iter->second.TargetAddress = targetAddress;
+					instructionHashMap_iter->second.TargetAddress = targetAddress;
 			}
 			else
 			{
@@ -460,12 +459,12 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 				OneAddressesInfo.Overflowed = FALSE;
 				OneAddressesInfo.SourceAddress = 0L;
 				OneAddressesInfo.TargetAddress = targetAddress;
-				fingerprint_map.insert(pair<unsigned char*, AddressesInfo>(FingerPrint, OneAddressesInfo));
+				instructionHashMap.insert(pair<unsigned char*, AddressesInfo>(InstructionHash, OneAddressesInfo));
 			}
 		}
 	}
 
-	for (auto& val : fingerprint_map)
+	for (auto& val : instructionHashMap)
 	{
 		if (!val.second.Overflowed &&
 			val.second.SourceAddress != 0L &&
@@ -476,7 +475,7 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 			//val.second.SourceAddress, val.second.TargetAddress
 			MatchData match_data;
 			memset(&match_data, 0, sizeof(MatchData));
-			match_data.Type = FINGERPRINT_INSIDE_FUNCTION_MATCH;
+			match_data.Type = INSTRUCTION_HASH_INSIDE_FUNCTION_MATCH;
 			match_data.Addresses[0] = val.second.SourceAddress;
 			match_data.Addresses[1] = val.second.TargetAddress;
 
@@ -485,36 +484,36 @@ MATCHMAP *DiffAlgorithms::DoFingerPrintMatchInsideFunction(va_t SourceFunctionAd
 			match_data.MatchRate = 100;
 
 			if (m_pdumpAddressChecker)
-				m_pdumpAddressChecker->DumpMatchInfo(match_data.Addresses[0], match_data.Addresses[1], match_data.MatchRate, "%s Add fingerprint match:\n", __FUNCTION__);
+				m_pdumpAddressChecker->DumpMatchInfo(match_data.Addresses[0], match_data.Addresses[1], match_data.MatchRate, "%s Add instruction_hash match:\n", __FUNCTION__);
             pMatchMap->insert(MatchMap_Pair(match_data.Addresses[0], match_data));
 		}
 	}
-	fingerprint_map.clear();
+	instructionHashMap.clear();
 
     return pMatchMap;
 }
 
-MATCHMAP *DiffAlgorithms::DoFingerPrintMatch()
+MATCHMAP *DiffAlgorithms::DoInstructionHashMatch()
 {
     MATCHMAP *p_match_map = new MATCHMAP;
-	multimap <unsigned char*, va_t, hash_compare_fingerprint>::iterator fingerprint_map_pIter;
-	multimap <unsigned char*, va_t, hash_compare_fingerprint>::iterator patched_fingerprint_map_pIter;
+	multimap <unsigned char*, va_t, hash_compare_instruction_hash>::iterator instructionHashIt;
+	multimap <unsigned char*, va_t, hash_compare_instruction_hash>::iterator patchedInstructionHashIt;
 
-	for (auto& val : SourceIDASession->GetClientAnalysisInfo()->fingerprint_map)
+	for (auto& val : SourceLoader->GetClientDisassemblyHashMaps()->instructionHashMap)
 	{
-		if (SourceIDASession->GetClientAnalysisInfo()->fingerprint_map.count(val.first) == 1)
+		if (SourceLoader->GetClientDisassemblyHashMaps()->instructionHashMap.count(val.first) == 1)
 		{
 			//unique key
-			if (TargetIDASession->GetClientAnalysisInfo()->fingerprint_map.count(val.first) == 1)
+			if (TargetLoader->GetClientDisassemblyHashMaps()->instructionHashMap.count(val.first) == 1)
 			{
-				patched_fingerprint_map_pIter = TargetIDASession->GetClientAnalysisInfo()->fingerprint_map.find(val.first);
-				if (patched_fingerprint_map_pIter != TargetIDASession->GetClientAnalysisInfo()->fingerprint_map.end())
+				patchedInstructionHashIt = TargetLoader->GetClientDisassemblyHashMaps()->instructionHashMap.find(val.first);
+				if (patchedInstructionHashIt != TargetLoader->GetClientDisassemblyHashMaps()->instructionHashMap.end())
 				{
 					MatchData match_data;
 					memset(&match_data, 0, sizeof(MatchData));
-					match_data.Type = FINGERPRINT_MATCH;
-					match_data.Addresses[0] = fingerprint_map_pIter->second;
-					match_data.Addresses[1] = patched_fingerprint_map_pIter->second;
+					match_data.Type = INSTRUCTION_HASH_MATCH;
+					match_data.Addresses[0] = instructionHashIt->second;
+					match_data.Addresses[1] = patchedInstructionHashIt->second;
 					match_data.MatchRate = 100;
 
 					if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair(match_data.Addresses[0], match_data.Addresses[1]))
@@ -544,8 +543,8 @@ MatchRateInfo *DiffAlgorithms::GetMatchRateInfoArray(va_t source_address, va_t t
 		LogMessage(0, __FUNCTION__, "%X-%X %d\n", source_address, target_address, type);
 	}
 
-	va_t *source_addresses = SourceIDASession->GetMappedAddresses(source_address, type, &source_addresses_number);
-	va_t *target_addresses = TargetIDASession->GetMappedAddresses(target_address, type, &target_addresses_number);
+	va_t *source_addresses = SourceLoader->GetMappedAddresses(source_address, type, &source_addresses_number);
+	va_t *target_addresses = TargetLoader->GetMappedAddresses(target_address, type, &target_addresses_number);
 
 	if (debug)
 	{
@@ -573,18 +572,18 @@ MatchRateInfo *DiffAlgorithms::GetMatchRateInfoArray(va_t source_address, va_t t
 			//Special case for switch case
 			for (int i = 0; i < source_addresses_number; i++)
 			{
-				multimap <va_t, unsigned char*>::iterator source_fingerprint_map_Iter = SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(source_addresses[i]);
-				multimap <va_t, unsigned char*>::iterator target_fingerprint_map_Iter = TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(target_addresses[i]);
+				multimap <va_t, unsigned char*>::iterator source_instructionHashMap_Iter = SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(source_addresses[i]);
+				multimap <va_t, unsigned char*>::iterator target_instructionHashMap_Iter = TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(target_addresses[i]);
 
-				if (source_fingerprint_map_Iter != SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end() &&
-					target_fingerprint_map_Iter != TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+				if (source_instructionHashMap_Iter != SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end() &&
+					target_instructionHashMap_Iter != TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 				{
 					p_match_rate_info_array[match_rate_info_count].Source = source_addresses[i];
 					p_match_rate_info_array[match_rate_info_count].Target = target_addresses[i];
 
-					p_match_rate_info_array[match_rate_info_count].MatchRate = GetFingerPrintMatchRate
-					(source_fingerprint_map_Iter->second,
-						target_fingerprint_map_Iter->second);
+					p_match_rate_info_array[match_rate_info_count].MatchRate = GetInstructionHashMatchRate
+					(source_instructionHashMap_Iter->second,
+						target_instructionHashMap_Iter->second);
 					p_match_rate_info_array[match_rate_info_count].IndexDiff = 0;
 					if (debug)
 						LogMessage(0, __FUNCTION__, "\tAdding %X-%X (%d%%, IndexDiff:%d)\n", p_match_rate_info_array[match_rate_info_count].Source, p_match_rate_info_array[match_rate_info_count].Target, p_match_rate_info_array[match_rate_info_count].MatchRate, p_match_rate_info_array[match_rate_info_count].IndexDiff);
@@ -600,7 +599,7 @@ MatchRateInfo *DiffAlgorithms::GetMatchRateInfoArray(va_t source_address, va_t t
 			multimap <va_t, va_t> address_pair_map;
 			for (int i = 0; i < source_addresses_number; i++)
 			{
-				multimap <va_t, unsigned char*>::iterator source_fingerprint_map_Iter = SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(source_addresses[i]);
+				multimap <va_t, unsigned char*>::iterator source_instructionHashMap_Iter = SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(source_addresses[i]);
 
 				for (int j = 0; j < target_addresses_number; j++)
 				{
@@ -624,22 +623,22 @@ MatchRateInfo *DiffAlgorithms::GetMatchRateInfoArray(va_t source_address, va_t t
 
 					address_pair_map.insert(pair<va_t, va_t>(source_addresses[i], target_addresses[j]));
 
-					multimap <va_t, unsigned char*>::iterator target_fingerprint_map_Iter = TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.find(target_addresses[j]);
+					multimap <va_t, unsigned char*>::iterator target_instructionHashMap_Iter = TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.find(target_addresses[j]);
 
-					if (source_fingerprint_map_Iter != SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end() &&
-						target_fingerprint_map_Iter != TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+					if (source_instructionHashMap_Iter != SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end() &&
+						target_instructionHashMap_Iter != TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 					{
 						p_match_rate_info_array[match_rate_info_count].Source = source_addresses[i];
 						p_match_rate_info_array[match_rate_info_count].Target = target_addresses[j];
 
-						p_match_rate_info_array[match_rate_info_count].MatchRate = GetFingerPrintMatchRate(source_fingerprint_map_Iter->second, target_fingerprint_map_Iter->second);
+						p_match_rate_info_array[match_rate_info_count].MatchRate = GetInstructionHashMatchRate(source_instructionHashMap_Iter->second, target_instructionHashMap_Iter->second);
 						p_match_rate_info_array[match_rate_info_count].IndexDiff = abs(i - j);
 						if (debug)
 							LogMessage(0, __FUNCTION__, "\tAdding %X-%X (%d%%, IndexDiff: %d)\n", p_match_rate_info_array[match_rate_info_count].Source, p_match_rate_info_array[match_rate_info_count].Target, p_match_rate_info_array[match_rate_info_count].MatchRate, p_match_rate_info_array[match_rate_info_count].IndexDiff);
 						match_rate_info_count++;
 					}
-					else if (source_fingerprint_map_Iter == SourceIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end() &&
-						target_fingerprint_map_Iter == TargetIDASession->GetClientAnalysisInfo()->address_fingerprint_map.end())
+					else if (source_instructionHashMap_Iter == SourceLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end() &&
+						target_instructionHashMap_Iter == TargetLoader->GetClientDisassemblyHashMaps()->addressToInstructionHashMap.end())
 					{
 						p_match_rate_info_array[match_rate_info_count].Source = source_addresses[i];
 						p_match_rate_info_array[match_rate_info_count].Target = target_addresses[j];
@@ -669,17 +668,16 @@ MATCHMAP *DiffAlgorithms::DoIsomorphMatch(MATCHMAP *pMainMatchMap, MATCHMAP *pOr
 {
 	int link_types[] = { CREF_FROM, CALL, DREF_FROM }; //CREF_TO, DREF_TO
 	int processed_count = 0;
-	multimap <va_t, MatchData>::iterator match_map_iter;
 	MATCHMAP *pMatchMap = new MATCHMAP;
 
 	LogMessage(0, __FUNCTION__, "Current match count=%u\n", pTemporaryMap->size());
 
-	for (match_map_iter = pTemporaryMap->begin(); match_map_iter != pTemporaryMap->end(); match_map_iter++)
+    for (auto& val : *pTemporaryMap)
 	{
 		for (int i = 0; i < sizeof(link_types) / sizeof(int); i++)
 		{
 			int match_rate_info_count = 0;
-			MatchRateInfo *p_match_rate_info_array = GetMatchRateInfoArray(match_map_iter->first, match_map_iter->second.Addresses[1], link_types[i], match_rate_info_count);
+			MatchRateInfo *p_match_rate_info_array = GetMatchRateInfoArray(val.first, val.second.Addresses[1], link_types[i], match_rate_info_count);
 
 			if (!p_match_rate_info_array)
 			{
@@ -782,13 +780,13 @@ MATCHMAP *DiffAlgorithms::DoIsomorphMatch(MATCHMAP *pMainMatchMap, MATCHMAP *pOr
 					match_data.Addresses[0] = p_match_rate_info_array[selected_index].Source;
 					match_data.Addresses[1] = p_match_rate_info_array[selected_index].Target;
 					match_data.MatchRate = p_match_rate_info_array[selected_index].MatchRate;
-					match_data.UnpatchedParentAddress = match_map_iter->first;
-					match_data.PatchedParentAddress = match_map_iter->second.Addresses[1];
+					match_data.UnpatchedParentAddress = val.first;
+					match_data.PatchedParentAddress = val.second.Addresses[1];
 
 					if (m_pdumpAddressChecker && m_pdumpAddressChecker->IsDumpPair(match_data.Addresses[0], match_data.Addresses[1]))
 					{
 						LogMessage(0, __FUNCTION__, "%X-%X: %d%%\n", match_data.Addresses[0], match_data.Addresses[1], match_data.MatchRate);
-						LogMessage(0, __FUNCTION__, "\tParent %X-%X (link type: %d, match_rate_info_count:%d)\n", match_map_iter->first, match_map_iter->second.Addresses[1], link_types[i], match_rate_info_count);
+						LogMessage(0, __FUNCTION__, "\tParent %X-%X (link type: %d, match_rate_info_count:%d)\n", val.first, val.second.Addresses[1], link_types[i], match_rate_info_count);
 					}
 
 					pMatchMap->insert(MatchMap_Pair(match_data.Addresses[0], match_data));
@@ -861,7 +859,7 @@ MATCHMAP *DiffAlgorithms::DoFunctionMatch(MATCHMAP *pCurrentMatchMap, multimap <
 				{
 					TargetBlockAddresses.push_back(TargetFunctionMembersIter->second);
 				}
-				DoFingerPrintMatchInsideFunction(SourceFunctionAddress, SourceBlockAddresses, targetFunctionAddress, TargetBlockAddresses);
+				DoInstructionHashMatchInsideFunction(SourceFunctionAddress, SourceBlockAddresses, targetFunctionAddress, TargetBlockAddresses);
 				TargetBlockAddresses.clear();
 			}
 			targetFunctionAddresses.clear();
@@ -897,16 +895,16 @@ MATCHMAP *DiffAlgorithms::DoFunctionMatch(MATCHMAP *pCurrentMatchMap, multimap <
 						if (m_pdumpAddressChecker && (m_pdumpAddressChecker->IsDumpPair(block_address, target_addr) || m_pdumpAddressChecker->IsDumpPair(source_function_addr, 0)))
 							LogMessage(0, __FUNCTION__, "Function: %X Block: %X:%X\r\n", source_function_addr, match_map_it->second.Addresses[0], target_addr);
 
-						va_t target_function_address;
-						if (TargetIDASession->GetFunctionAddress(target_addr, target_function_address))
+						va_t targetFunctionAddress;
+						if (TargetLoader->GetFunctionAddress(target_addr, targetFunctionAddress))
 						{
-							if (m_pdumpAddressChecker && (m_pdumpAddressChecker->IsDumpPair(block_address, target_addr) || m_pdumpAddressChecker->IsDumpPair(source_function_addr, target_function_address)))
-								LogMessage(0, __FUNCTION__, "Function: %X:%X Block: %X:%X\r\n", source_function_addr, target_function_address, block_address, target_addr);
+							if (m_pdumpAddressChecker && (m_pdumpAddressChecker->IsDumpPair(block_address, target_addr) || m_pdumpAddressChecker->IsDumpPair(source_function_addr, targetFunctionAddress)))
+								LogMessage(0, __FUNCTION__, "Function: %X:%X Block: %X:%X\r\n", source_function_addr, targetFunctionAddress, block_address, target_addr);
 
-							unordered_map <va_t, va_t>::iterator function_match_count_it = function_match_count.find(target_function_address);
+							unordered_map <va_t, va_t>::iterator function_match_count_it = function_match_count.find(targetFunctionAddress);
 							if (function_match_count_it == function_match_count.end())
 							{
-								function_match_count.insert(pair<va_t, va_t>(target_function_address, 1));
+								function_match_count.insert(pair<va_t, va_t>(targetFunctionAddress, 1));
 							}
 							else
 							{
@@ -976,7 +974,7 @@ MATCHMAP *DiffAlgorithms::DoFunctionMatch(MATCHMAP *pCurrentMatchMap, multimap <
     return pMatchMap;
 }
 
-const char* MatchDataTypeStr[] = { "Name", "Fingerprint", "Two Level Fingerprint", "IsoMorphic Match", "Fingerprint Inside Function", "Function" };
+const char* MatchDataTypeStr[] = { "Name", "InstructionHash", "Two Level InstructionHash", "IsoMorphic Match", "InstructionHash Inside Function", "Function" };
 
 void DiffAlgorithms::DumpMatchMapIterInfo(const char *prefix, multimap <va_t, MatchData>::iterator match_map_iter)
 {
